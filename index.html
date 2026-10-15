@@ -1,0 +1,876 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#F2F2F7" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="icon" type="image/png" href="icon-512.png">
+<style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);color-scheme:light}[hidden]{display:none!important}img{max-width:100%}</style>
+<title>Pasos</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Nunito:wght@600;700;800&display=swap">
+<style>
+/* Layout: one-screen phone app. Day selector on top, the two readings (Pasos, Distancia) stacked large in the middle as in the sketch, the summary launcher pinned at the bottom. Summary and settings slide in as full-screen panels. */
+:root{
+  --bg:#F2F2F7;
+  --surface:#FFFFFF;
+  --ink:#1C1C1E;
+  --muted:#6E6E73;
+  --faint:#AEAEB2;
+  --hair:rgba(60,60,67,.16);
+  --fill:rgba(118,118,128,.12);
+  --seg-on:#FFFFFF;
+  --accent:#E4491F;
+  --accent-ink:#FFFFFF;
+  --accent-soft:rgba(228,73,31,.12);
+  --bar-dim:rgba(228,73,31,.30);
+  --warn-ink:#9A4A00;
+  --warn-soft:rgba(255,149,0,.16);
+  --shadow:0 1px 2px rgba(0,0,0,.06),0 2px 10px rgba(0,0,0,.05);
+  --f-num:ui-rounded,"SF Pro Rounded","Nunito",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-ui:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#000000; --surface:#1C1C1E; --ink:#F5F5F7; --muted:#98989F; --faint:#636366;
+    --hair:rgba(235,235,245,.14); --fill:rgba(118,118,128,.24); --seg-on:#636366;
+    --accent:#FF6A3D; --accent-ink:#1B0B05; --accent-soft:rgba(255,106,61,.16); --bar-dim:rgba(255,106,61,.32);
+    --warn-ink:#FFB340; --warn-soft:rgba(255,159,10,.16);
+    --shadow:none; color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#000000; --surface:#1C1C1E; --ink:#F5F5F7; --muted:#98989F; --faint:#636366;
+  --hair:rgba(235,235,245,.14); --fill:rgba(118,118,128,.24); --seg-on:#636366;
+  --accent:#FF6A3D; --accent-ink:#1B0B05; --accent-soft:rgba(255,106,61,.16); --bar-dim:rgba(255,106,61,.32);
+  --warn-ink:#FFB340; --warn-soft:rgba(255,159,10,.16);
+  --shadow:none; color-scheme:dark;
+}
+html{box-sizing:border-box;height:100%;-webkit-text-size-adjust:100%}
+*,*::before,*::after{box-sizing:inherit}
+body{
+  height:100%;margin:0;background:var(--bg);color:var(--ink);
+  font-family:var(--f-ui);font-size:17px;line-height:1.35;
+  -webkit-font-smoothing:antialiased;-webkit-tap-highlight-color:transparent;
+  overflow:hidden;
+}
+button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:pointer}
+button:disabled{cursor:default;opacity:.3}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:10px}
+.num{font-family:var(--f-num);font-variant-numeric:tabular-nums;font-weight:700}
+
+/* ---------- Pantalla del día ---------- */
+#today{
+  height:100%;display:flex;flex-direction:column;overflow-y:auto;
+  padding-left:max(16px,env(safe-area-inset-left,0px));
+  padding-right:max(16px,env(safe-area-inset-right,0px));
+}
+.col{width:100%;max-width:440px;margin:0 auto}
+.bar{display:grid;grid-template-columns:44px 1fr 44px;align-items:center;padding-block:6px}
+.icon{width:44px;height:44px;display:grid;place-items:center;border-radius:22px;color:var(--accent)}
+.icon:active{background:var(--accent-soft)}
+.icon svg{width:24px;height:24px}
+.daynav{display:grid;grid-template-columns:40px 1fr 40px;align-items:center;min-width:0}
+.daynav>button:not(.dlabel){height:44px;display:grid;place-items:center;color:var(--accent)}
+.daynav>button svg{width:12px;height:20px}
+.dlabel{display:flex;flex-direction:column;align-items:center;min-width:0;padding-block:2px}
+.dlabel .d1{font-weight:600;font-size:17px}
+.dlabel .d2{font-size:13px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+
+.banner{
+  display:flex;align-items:center;gap:12px;justify-content:space-between;
+  background:var(--warn-soft);color:var(--warn-ink);border-radius:14px;
+  padding:10px 12px 10px 14px;font-size:14px;margin-top:6px;
+}
+.banner button{font-weight:600;font-size:14px;white-space:nowrap;padding:6px 10px;border-radius:10px;background:var(--surface);color:var(--ink)}
+
+.stats{flex:1;display:flex;flex-direction:column;justify-content:center;gap:clamp(28px,6vh,56px);padding-block:24px}
+.stat .label{font-size:19px;font-weight:600;color:var(--accent);letter-spacing:.005em}
+.stat .value{line-height:1;letter-spacing:-.02em;margin-top:4px;color:var(--ink)}
+#vSteps{font-size:clamp(76px,25vw,136px)}
+#vDist{font-size:clamp(58px,18vw,100px)}
+.value .unit{font-family:var(--f-ui);font-weight:600;font-size:.34em;letter-spacing:0;color:var(--muted);margin-left:.18em}
+.value.empty{color:var(--faint)}
+.status{font-size:13px;color:var(--muted);text-align:center;min-height:18px;margin:0 0 14px;text-wrap:balance}
+
+.resumen{padding-bottom:12px}
+.rtitle{font-size:13px;font-weight:600;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);margin:0 0 8px 4px}
+.seg3{display:grid;grid-template-columns:repeat(3,1fr);background:var(--surface);border-radius:16px;box-shadow:var(--shadow);overflow:hidden}
+.seg3 button{padding:16px 6px;font-weight:600;font-size:17px;color:var(--accent);text-align:center}
+.seg3 button+button{border-left:1px solid var(--hair)}
+.seg3 button:active{background:var(--accent-soft)}
+
+/* ---------- Paneles ---------- */
+.panel{
+  position:fixed;inset:0;z-index:10;background:var(--bg);display:flex;flex-direction:column;
+  padding-top:env(safe-area-inset-top,0px);
+  transform:translateX(100%);visibility:hidden;
+  transition:transform .34s cubic-bezier(.2,.8,.2,1),visibility 0s linear .34s;
+}
+.panel.open{transform:none;visibility:visible;transition:transform .34s cubic-bezier(.2,.8,.2,1)}
+.phead{
+  display:grid;grid-template-columns:1fr auto 1fr;align-items:center;min-height:52px;
+  padding-left:max(8px,env(safe-area-inset-left,0px));padding-right:max(8px,env(safe-area-inset-right,0px));
+}
+.phead h2{margin:0;font-size:17px;font-weight:600;text-align:center}
+.phead .back,.phead .done{color:var(--accent);font-size:17px;height:44px;padding:0 8px;display:flex;align-items:center;gap:4px}
+.phead .back{justify-self:start}
+.phead .done{justify-self:end;font-weight:600}
+.phead .back svg{width:12px;height:20px}
+.pbody{
+  flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));
+  padding-bottom:calc(28px + env(safe-area-inset-bottom,0px));
+}
+.pbody>.col{display:flex;flex-direction:column;gap:16px}
+
+.seg{display:grid;grid-template-columns:repeat(3,1fr);background:var(--fill);border-radius:10px;padding:2px}
+.seg button{padding:7px 4px;font-size:14px;font-weight:600;border-radius:8px}
+.seg button[aria-pressed="true"]{background:var(--seg-on);box-shadow:0 1px 3px rgba(0,0,0,.12)}
+
+.pnav{display:grid;grid-template-columns:44px 1fr 44px;align-items:center}
+.pnav>button{height:44px;display:grid;place-items:center;color:var(--accent)}
+.pnav>button svg{width:12px;height:20px}
+.plabel{text-align:center;min-width:0}
+.plabel .p1{font-weight:600;font-size:17px;text-wrap:balance}
+.plabel .p2{font-size:13px;color:var(--muted)}
+
+.card{background:var(--surface);border-radius:16px;box-shadow:var(--shadow);padding:16px}
+.totals{display:grid;grid-template-columns:1fr 1fr;gap:12px 16px}
+.totals .k{font-size:15px;font-weight:600;color:var(--accent)}
+.totals .v{font-size:clamp(30px,9vw,40px);line-height:1.05;letter-spacing:-.02em;margin-top:2px;white-space:nowrap}
+.totals .v.long{font-size:clamp(24px,7.2vw,32px)}
+.totals .v .unit{font-family:var(--f-ui);font-size:.45em;font-weight:600;color:var(--muted);margin-left:.2em}
+.facts{grid-column:1/-1;display:flex;flex-direction:column;gap:6px;border-top:1px solid var(--hair);padding-top:12px;font-size:15px}
+.facts div{display:flex;justify-content:space-between;gap:12px}
+.facts span:first-child{color:var(--muted)}
+.facts span:last-child{text-align:right;font-variant-numeric:tabular-nums}
+
+.detail{min-height:42px;margin-bottom:6px}
+.detail .t1{font-size:13px;color:var(--muted)}
+.detail .t2{font-size:17px;font-weight:600;font-variant-numeric:tabular-nums}
+.chart svg{display:block;width:100%;height:auto;overflow:visible;touch-action:manipulation}
+.chart .grid{stroke:var(--hair);stroke-width:1}
+.chart .base{stroke:var(--faint);stroke-width:1}
+.chart .avg{stroke:var(--ink);stroke-width:1;stroke-dasharray:3 3;opacity:.55}
+.chart text{font-family:var(--f-ui);font-size:10.5px;fill:var(--muted)}
+.chart text.avgt{fill:var(--ink);font-weight:600;paint-order:stroke;stroke:var(--surface);stroke-width:4px;stroke-linejoin:round}
+.chart rect.b{fill:var(--accent)}
+.chart rect.b.dim{fill:var(--bar-dim)}
+.chart rect.hit{fill:transparent;cursor:pointer}
+.chart text.on{fill:var(--accent);font-weight:700}
+
+.list{padding:4px 0}
+.lrow{display:grid;grid-template-columns:1fr auto 72px;gap:12px;align-items:baseline;width:100%;text-align:left;padding:11px 16px;font-size:16px}
+.lrow+.lrow{border-top:1px solid var(--hair)}
+.lrow.head{font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;padding-block:8px}
+.lrow .n{text-align:right;font-variant-numeric:tabular-nums}
+.lrow .km{color:var(--muted)}
+.lrow.sel{background:var(--accent-soft)}
+.lrow.sel .n:not(.km){color:var(--accent);font-weight:600}
+.empty-note{color:var(--muted);font-size:15px;text-align:center;padding:24px 8px}
+
+/* ---------- Atajo y datos (estilos) ---------- */
+.sect h3{font-size:13px;font-weight:600;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);margin:8px 0 8px 4px}
+.sect p{margin:0;font-size:15px;color:var(--muted);line-height:1.45}
+.group{background:var(--surface);border-radius:14px;box-shadow:var(--shadow);overflow:hidden}
+.grow{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 16px;min-height:48px;font-size:16px}
+.grow+.grow{border-top:1px solid var(--hair)}
+.grow .gv{color:var(--muted);text-align:right;min-width:0;overflow-wrap:anywhere;font-size:15px}
+.copyrow{display:flex;align-items:center;gap:12px;padding:10px 12px 10px 16px}
+.copyrow+.copyrow{border-top:1px solid var(--hair)}
+.copyrow .ck{font-size:13px;color:var(--muted)}
+.copyrow code{display:block;font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace;font-size:13px;overflow-wrap:anywhere;user-select:all;-webkit-user-select:all}
+.copyrow>div{flex:1;min-width:0}
+.copyrow button{color:var(--accent);font-weight:600;font-size:15px;padding:8px 10px;border-radius:10px;background:var(--accent-soft);white-space:nowrap}
+.tline{font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace;font-size:13px;line-height:2;overflow-wrap:anywhere}
+.chip{font-family:var(--f-ui);font-size:12px;font-weight:600;background:var(--accent-soft);color:var(--accent);padding:3px 7px;border-radius:7px;white-space:nowrap}
+.field{display:flex;flex-direction:column;gap:6px;padding:12px 16px}
+.field+.field{border-top:1px solid var(--hair)}
+.field label{font-size:13px;color:var(--muted)}
+.field input,.field textarea{font:inherit;font-size:16px;color:var(--ink);background:var(--fill);border:0;border-radius:10px;padding:10px 12px;width:100%;min-width:0}
+.field textarea{min-height:120px;font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace;font-size:14px;resize:vertical}
+.btn{width:100%;padding:14px 16px;border-radius:14px;font-weight:600;font-size:17px;text-align:center}
+.btn.primary{background:var(--accent);color:var(--accent-ink)}
+.btn.plain{background:var(--surface);color:var(--accent);box-shadow:var(--shadow)}
+.btn.danger{background:var(--surface);color:#D70015;box-shadow:var(--shadow)}
+.msg{font-size:14px;border-radius:12px;padding:10px 14px;line-height:1.4}
+.msg.err{background:rgba(255,59,48,.12);color:var(--ink)}
+.msg.ok{background:rgba(52,199,89,.14);color:var(--ink)}
+.stack{display:flex;flex-direction:column;gap:10px}
+.raw{font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace;font-size:12px;white-space:pre-wrap;overflow-wrap:anywhere;color:var(--muted);max-height:160px;overflow:auto;padding:12px 16px;margin:0}
+
+.toast{
+  position:fixed;left:50%;top:calc(60px + env(safe-area-inset-top,0px));z-index:30;
+  transform:translate(-50%,-12px);opacity:0;pointer-events:none;
+  background:var(--ink);color:var(--bg);font-size:15px;font-weight:600;
+  padding:10px 16px;border-radius:999px;max-width:calc(100% - 32px);text-align:center;
+  transition:opacity .2s,transform .2s;
+}
+.toast.show{opacity:1;transform:translate(-50%,0)}
+@media (prefers-reduced-motion: reduce){
+  .panel,.panel.open,.toast{transition:none}
+}
+</style>
+</head>
+<body>
+<div id="today">
+  <div class="col">
+    <header class="bar">
+      <button class="icon" id="btnBox" aria-label="Atajo y datos">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="8.5" y="3.5" width="12" height="12" rx="3.2"/><path d="M15.5 15.5v1.3a3.2 3.2 0 0 1-3.2 3.2H6.7a3.2 3.2 0 0 1-3.2-3.2v-5.6a3.2 3.2 0 0 1 3.2-3.2h1.8"/></svg>
+      </button>
+      <div class="daynav">
+        <button id="prevDay" aria-label="Día anterior"><svg viewBox="0 0 12 20" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M10 2 2 10l8 8"/></svg></button>
+        <button class="dlabel" id="dayLabel" aria-label="Volver a hoy"><span class="d1" id="d1">Hoy</span><span class="d2" id="d2"></span></button>
+        <button id="nextDay" aria-label="Día siguiente"><svg viewBox="0 0 12 20" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m2 2 8 8-8 8"/></svg></button>
+      </div>
+      <button class="icon" id="btnSync" aria-label="Actualizar desde Salud">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12a8 8 0 1 1-2.6-5.9"/><path d="M20 4v4.5h-4.5"/></svg>
+      </button>
+    </header>
+    <div class="banner" id="banner" hidden><span id="bannerText"></span><button id="bannerBtn"></button></div>
+  </div>
+
+  <section class="stats col" aria-live="polite">
+    <div class="stat">
+      <div class="label">Pasos</div>
+      <div class="value num" id="vSteps">—</div>
+    </div>
+    <div class="stat">
+      <div class="label">Distancia</div>
+      <div class="value num" id="vDist">—</div>
+    </div>
+  </section>
+
+  <div class="col">
+    <p class="status" id="status"></p>
+    <footer class="resumen">
+      <div class="rtitle">Ver resumen</div>
+      <div class="seg3">
+        <button data-open="week">Semana</button>
+        <button data-open="month">Mes</button>
+        <button data-open="year">Año</button>
+      </div>
+    </footer>
+  </div>
+</div>
+
+<!-- Resumen -->
+<section class="panel" id="sumPanel" aria-label="Resumen" aria-hidden="true">
+  <div class="phead">
+    <button class="back" data-close><svg viewBox="0 0 12 20" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M10 2 2 10l8 8"/></svg>Día</button>
+    <h2>Resumen</h2>
+    <span></span>
+  </div>
+  <div class="pbody">
+    <div class="col">
+      <div class="seg" id="seg" role="group" aria-label="Período">
+        <button data-k="week" aria-pressed="true">Semana</button>
+        <button data-k="month" aria-pressed="false">Mes</button>
+        <button data-k="year" aria-pressed="false">Año</button>
+      </div>
+      <div class="pnav">
+        <button id="prevP" aria-label="Período anterior"><svg viewBox="0 0 12 20" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M10 2 2 10l8 8"/></svg></button>
+        <div class="plabel"><div class="p1" id="p1"></div><div class="p2" id="p2"></div></div>
+        <button id="nextP" aria-label="Período siguiente"><svg viewBox="0 0 12 20" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m2 2 8 8-8 8"/></svg></button>
+      </div>
+      <div class="card totals" id="totals"></div>
+      <div class="card chart">
+        <div class="detail" id="detail"></div>
+        <div id="chart"></div>
+      </div>
+      <div class="card list" id="list" style="padding:0"></div>
+    </div>
+  </div>
+</section>
+
+<!-- Atajo y datos -->
+<section class="panel" id="boxPanel" aria-label="Atajo y datos" aria-hidden="true">
+  <div class="phead">
+    <span></span>
+    <h2>Atajo y datos</h2>
+    <button class="done" data-close>Listo</button>
+  </div>
+  <div class="pbody">
+    <div class="col" id="boxBody"></div>
+  </div>
+</section>
+
+<div class="toast" id="toast" role="status"></div>
+
+<script>
+(() => {
+'use strict';
+const KEY = 'pasos.v1';
+const SHORTCUT = 'Pasos';
+const APP_URL = 'https://pablocarvallo.github.io/pasos/';
+
+const $ = s => document.querySelector(s);
+const DOW = ['domingo','lunes','martes','miércoles','jueves','viernes','sábado'];
+const DOW3 = ['dom','lun','mar','mié','jue','vie','sáb'];
+const DOW1 = ['D','L','M','M','J','V','S'];
+const MES = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+const MES3 = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+const MES1 = ['E','F','M','A','M','J','J','A','S','O','N','D'];
+
+/* ---------- Fechas y números ---------- */
+const pad = n => String(n).padStart(2, '0');
+const ymd = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+const fromYmd = s => { const [y, m, d] = s.split('-').map(Number); return new Date(y, m - 1, d); };
+const addDays = (d, n) => new Date(d.getFullYear(), d.getMonth(), d.getDate() + n);
+const today = () => { const n = new Date(); return new Date(n.getFullYear(), n.getMonth(), n.getDate()); };
+const dayDiff = (a, b) => Math.round((a - b) / 864e5);
+const cap = s => s.charAt(0).toUpperCase() + s.slice(1);
+const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+const group = s => s.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+const fmtInt = n => (n < 0 ? '-' : '') + group(String(Math.round(Math.abs(n))));
+function fmtDec(n, dec = 1) {
+  const [i, f] = Math.abs(n).toFixed(dec).split('.');
+  return (n < 0 ? '-' : '') + group(i) + (f ? ',' + f : '');
+}
+function hhmm(d) { return `${d.getHours()}:${pad(d.getMinutes())}`; }
+function relTime(ts) {
+  const d = new Date(ts), t = today();
+  const diff = dayDiff(t, new Date(d.getFullYear(), d.getMonth(), d.getDate()));
+  if (diff === 0) return `hoy a las ${hhmm(d)}`;
+  if (diff === 1) return `ayer a las ${hhmm(d)}`;
+  return `el ${d.getDate()} de ${MES3[d.getMonth()]} a las ${hhmm(d)}`;
+}
+
+/* ---------- Lector de reportes del atajo ----------
+   Cada línea: P;<fecha>;<pasos>   o   D;<fecha>;<distancia>;<unidad>
+   Acepta ; | o tabulador, fechas ISO 8601, dd-mm-aaaa o con el mes en palabras,
+   y números con punto o coma. */
+const MONTHS = {ene:0,jan:0,feb:1,mar:2,abr:3,apr:3,may:4,jun:5,jul:6,ago:7,aug:7,sep:8,set:8,oct:9,nov:10,dic:11,dec:11};
+function parseDate(str) {
+  const s = String(str).trim().toLowerCase();
+  let m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})(?:[t ](\d{1,2}):(\d{2})(?::(\d{2})(?:\.\d+)?)?\s*(z|[+-]\d{2}:?\d{2})?)?/);
+  if (m) {
+    // Con hora en UTC (Z) se pasa a la fecha local; con desfase explícito la fecha escrita ya es la local.
+    if (m[7] === 'z') {
+      const iso = `${m[1]}-${pad(m[2])}-${pad(m[3])}T${pad(m[4])}:${m[5]}:${m[6] || '00'}${m[7] === 'z' ? 'Z' : m[7].replace(/^([+-]\d{2})(\d{2})$/, '$1:$2')}`;
+      const d = new Date(iso);
+      if (!isNaN(d)) return ymd(d);
+    }
+    return valid(+m[1], +m[2], +m[3]);
+  }
+  m = s.match(/^(\d{1,2})[-\/.](\d{1,2})[-\/.](\d{2,4})\b/);
+  if (m) { let y = +m[3]; if (y < 100) y += 2000; return valid(y, +m[2], +m[1]); }
+  m = s.match(/(\d{1,2})\s*(?:de\s+)?([a-záéíóú]{3,})\.?,?\s*(?:de\s+)?(\d{4})/);
+  if (m && m[2].slice(0, 3) in MONTHS) return valid(+m[3], MONTHS[m[2].slice(0, 3)] + 1, +m[1]);
+  m = s.match(/([a-z]{3,})\.?\s+(\d{1,2}),?\s+(\d{4})/);
+  if (m && m[1].slice(0, 3) in MONTHS) return valid(+m[3], MONTHS[m[1].slice(0, 3)] + 1, +m[2]);
+  return null;
+}
+function valid(y, mo, d) {
+  if (y < 2000 || y > 2100 || mo < 1 || mo > 12 || d < 1 || d > 31) return null;
+  const dt = new Date(y, mo - 1, d);
+  return dt.getMonth() === mo - 1 ? ymd(dt) : null;
+}
+function unitOf(str) {
+  const u = String(str || '').toLowerCase().replace(/[^a-záéíóú]/g, '');
+  if (!u) return null;
+  if (u === 'km' || u.startsWith('kil')) return 'km';
+  if (u === 'mi' || u.startsWith('mill') || u.startsWith('mile')) return 'mi';
+  if (u === 'ft' || u.startsWith('pie') || u.startsWith('feet')) return 'ft';
+  if (u === 'm' || u.startsWith('met')) return 'm';
+  return null;
+}
+// thousandsFirst: un solo separador seguido de 3 dígitos se lee como separador de miles
+function parseNum(str, thousandsFirst) {
+  const s = String(str).replace(/[^\d.,-]/g, '');
+  if (!/\d/.test(s)) return null;
+  const ld = s.lastIndexOf('.'), lc = s.lastIndexOf(',');
+  if (ld >= 0 && lc >= 0) {
+    const dec = ld > lc ? '.' : ',', th = dec === '.' ? ',' : '.';
+    return parseFloat(s.split(th).join('').replace(dec, '.'));
+  }
+  if (ld < 0 && lc < 0) return parseFloat(s);
+  const sep = ld >= 0 ? '.' : ',';
+  const parts = s.split(sep);
+  if (parts.length > 2) return parseFloat(parts.join(''));
+  const looksTh = parts[1].length === 3 && parts[0].replace('-', '') !== '0';
+  if (looksTh && thousandsFirst) return parseFloat(parts.join(''));
+  return parseFloat(parts[0] + '.' + parts[1]);
+}
+function readValue(kind, vs, us) {
+  if (kind === 's') {
+    const v = parseNum(vs, true);
+    return v == null || !isFinite(v) || v < 0 ? null : Math.round(v);
+  }
+  let unit = unitOf(us) || unitOf(String(vs).replace(/[\d.,\s-]/g, ''));
+  let v = parseNum(vs, unit === 'm' || unit === 'ft');
+  if (v == null || !isFinite(v) || v < 0) return null;
+  if (!unit) unit = v > 300 ? 'm' : 'km';
+  v = unit === 'm' ? v / 1000 : unit === 'mi' ? v * 1.609344 : unit === 'ft' ? v * 0.0003048 : v;
+  return Math.round(v * 1000) / 1000;
+}
+const HEAD_S = /^(p|pasos|steps)$/i, HEAD_D = /^(d|dist|distancia)$/i;
+function parseReport(text) {
+  const out = {};
+  const put = (date, kind, val) => { if (date && val != null) (out[date] = out[date] || {})[kind] = val; };
+  const lines = String(text || '').replace(/\r/g, '').split('\n').map(l => l.trim()).filter(Boolean);
+  // Formato en bloques (el del atajo): una línea P, luego todas las fechas y todos los valores;
+  // una línea D, luego fechas, valores y, si vienen, unidades. Se emparejan en orden.
+  let kind = null, dates = [], vals = [], units = [];
+  const flush = () => {
+    if (kind) {
+      const n = Math.min(dates.length, vals.length);
+      for (let i = 0; i < n; i++) put(dates[i], kind, readValue(kind, vals[i], units[i] || units[0]));
+    }
+    dates = []; vals = []; units = [];
+  };
+  for (const l of lines) {
+    // Formato por líneas: P;fecha;pasos  o  D;fecha;distancia;unidad
+    const m = l.match(/^(p|pasos|s|steps|d|dist|distancia)\s*[;|\t]\s*(.+)$/i);
+    if (m) {
+      const k = /^d/i.test(m[1]) ? 'd' : 's';
+      const parts = m[2].split(/\s*[;|\t]\s*/);
+      if (parts.length >= 2) put(parseDate(parts[0]), k, readValue(k, parts[1], parts[2]));
+      continue;
+    }
+    if (HEAD_S.test(l)) { flush(); kind = 's'; continue; }
+    if (HEAD_D.test(l)) { flush(); kind = 'd'; continue; }
+    if (!kind) continue;
+    const dt = parseDate(l);
+    if (dt) { dates.push(dt); continue; }
+    if (/\d/.test(l)) { vals.push(l); continue; }
+    if (unitOf(l)) units.push(l);
+  }
+  flush();
+  return out;
+}
+function mergeReport(parsed, ts) {
+  let n = 0;
+  for (const [date, v] of Object.entries(parsed)) {
+    const cur = st.days[date] || {};
+    if (cur.t && cur.t > ts) continue;
+    st.days[date] = { s: v.s != null ? v.s : cur.s, d: v.d != null ? v.d : cur.d, t: ts };
+    n++;
+  }
+  return n;
+}
+
+/* ---------- Estado ---------- */
+let st = { days: {}, lastReport: null, lastBad: null };
+function load() { try { const r = localStorage.getItem(KEY); if (r) st = Object.assign(st, JSON.parse(r)); } catch (e) {} }
+function save() { try { localStorage.setItem(KEY, JSON.stringify(st)); } catch (e) {} }
+
+function mulberry32(a) { return () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+let EXAMPLE = null;
+function example() {
+  if (EXAMPLE) return EXAMPLE;
+  const out = {}, r = mulberry32(14), t = today();
+  for (let i = 430; i >= 1; i--) {
+    const d = addDays(t, -i), w = d.getDay();
+    const base = w === 0 ? 3900 : w === 6 ? 6400 : 5600;
+    const season = 1 - 0.16 * Math.cos((d.getMonth() + 0.5) / 12 * 2 * Math.PI);
+    let s = base * season * (0.55 + r() * 0.85);
+    if (r() < 0.07) s *= 1.9;
+    s = Math.round(s);
+    out[ymd(d)] = { s, d: Math.round(s * (0.00070 + r() * 0.00006) * 1000) / 1000, t: 0 };
+  }
+  out[ymd(t)] = { s: 3500, d: 2.58, t: 0 };
+  return (EXAMPLE = out);
+}
+const isExample = () => !Object.keys(st.days).length;
+const days = () => isExample() ? example() : st.days;
+function earliest() { const k = Object.keys(days()).sort(); return k.length ? fromYmd(k[0]) : today(); }
+
+/* ---------- Datos que trae el atajo ----------
+   El atajo abre esta página con #r=<reporte>. El reporte va después del #,
+   así que no sale del teléfono: no llega al servidor de la página. */
+let justImported = null;
+function importFromHash() {
+  const h = location.hash;
+  if (!/^#r=/.test(h)) return false;
+  let raw = h.slice(3);
+  try { raw = decodeURIComponent(raw); } catch (e) { try { raw = decodeURI(raw); } catch (e2) {} }
+  try { history.replaceState(null, '', location.pathname + location.search); } catch (e) {}
+  const parsed = parseReport(raw);
+  const n = Object.keys(parsed).length;
+  if (!n) {
+    st.lastBad = { ts: Date.now(), text: raw.slice(0, 3000) };
+    save();
+    justImported = { bad: true };
+    return true;
+  }
+  const now = Date.now();
+  mergeReport(parsed, now);
+  st.lastReport = now; st.lastBad = null;
+  save();
+  cur = today(); followToday = true;
+  justImported = { n };
+  return true;
+}
+function afterImport() {
+  if (!justImported) return;
+  if (justImported.bad) toast('No se pudo leer lo que envió el atajo');
+  else toast('Datos actualizados');
+  justImported = null;
+}
+window.addEventListener('hashchange', () => { if (importFromHash()) { closePanels(); renderAll(); afterImport(); } });
+
+/* ---------- Actualizar desde Salud (ejecuta el atajo) ---------- */
+let opening = false;
+function runShortcut() {
+  opening = true;
+  setStatus('Abriendo Atajos…');
+  setTimeout(() => {
+    if (opening && document.visibilityState === 'visible') {
+      opening = false;
+      setStatus(`Si Atajos no se abrió, toca el ícono «${SHORTCUT}» en tu pantalla de inicio.`);
+    }
+  }, 5000);
+  location.href = 'shortcuts://run-shortcut?name=' + encodeURIComponent(SHORTCUT);
+}
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') return;
+  opening = false;
+  if (followToday) cur = today();
+  renderAll();
+});
+window.addEventListener('pageshow', e => { if (e.persisted) renderAll(); });
+
+/* ---------- Vista del día ---------- */
+let cur = today(), followToday = true;
+function setStatus(t) { $('#status').textContent = t; }
+
+function renderDay() {
+  const D = days(), t = today(), k = ymd(cur), diff = dayDiff(t, cur);
+  $('#d1').textContent = diff === 0 ? 'Hoy' : diff === 1 ? 'Ayer' : cap(DOW[cur.getDay()]);
+  $('#d2').textContent = diff <= 1
+    ? `${cap(DOW[cur.getDay()])} ${cur.getDate()} de ${MES[cur.getMonth()]}`
+    : `${cur.getDate()} de ${MES[cur.getMonth()]}${cur.getFullYear() !== t.getFullYear() ? ' de ' + cur.getFullYear() : ''}`;
+  $('#nextDay').disabled = diff <= 0;
+  $('#prevDay').disabled = cur <= earliest();
+  const v = D[k];
+  const sEl = $('#vSteps'), dEl = $('#vDist');
+  const hasS = v && v.s != null, hasD = v && v.d != null;
+  sEl.textContent = hasS ? fmtInt(v.s) : '—';
+  dEl.innerHTML = hasD ? `${fmtDec(v.d)}<span class="unit">km</span>` : '—';
+  sEl.classList.toggle('empty', !hasS);
+  dEl.classList.toggle('empty', !hasD);
+}
+function renderBanner() {
+  const b = $('#banner');
+  let text = '', btn = '', act = null;
+  if (isExample()) { text = 'Estás viendo datos de ejemplo.'; btn = 'Conectar'; act = openBox; }
+  else if (st.lastBad) { text = 'El último envío del atajo no se pudo leer.'; btn = 'Revisar'; act = openBox; }
+  b.hidden = !text;
+  $('#bannerText').textContent = text;
+  $('#bannerBtn').textContent = btn;
+  $('#bannerBtn').onclick = act;
+}
+function renderStatus() {
+  if (opening) return;
+  const v = days()[ymd(cur)];
+  let s = '';
+  if (isExample()) s = 'Ejemplo: así se verán tus pasos de cada día.';
+  else if (!v) s = 'Sin datos para este día.';
+  else if (st.lastReport) {
+    s = 'Actualizado ' + relTime(st.lastReport);
+    if (dayDiff(today(), cur) === 0 && Date.now() - st.lastReport > 30 * 60000) s += ' · toca ↻ para traer lo último';
+  }
+  setStatus(s);
+}
+
+/* ---------- Resúmenes ---------- */
+let sum = { kind: 'week', anchor: today(), sel: null };
+function range(kind, a) {
+  if (kind === 'week') { const s = addDays(a, -((a.getDay() + 6) % 7)); return { start: s, end: addDays(s, 6) }; }
+  if (kind === 'month') return { start: new Date(a.getFullYear(), a.getMonth(), 1), end: new Date(a.getFullYear(), a.getMonth() + 1, 0) };
+  return { start: new Date(a.getFullYear(), 0, 1), end: new Date(a.getFullYear(), 11, 31) };
+}
+function shift(kind, a, n) {
+  if (kind === 'week') return addDays(a, 7 * n);
+  if (kind === 'month') return new Date(a.getFullYear(), a.getMonth() + n, 1);
+  return new Date(a.getFullYear() + n, 0, 1);
+}
+function niceCeil(v) {
+  if (v <= 0) return 1;
+  const e = Math.pow(10, Math.floor(Math.log10(v))), f = v / e;
+  for (const s of [1, 1.2, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10]) if (f <= s + 1e-9) return s * e;
+  return 10 * e;
+}
+function summarize(kind, a) {
+  const D = days(), t = today(), { start, end } = range(kind, a);
+  const items = [];
+  let totS = 0, totD = 0, nS = 0, nD = 0, best = null, elapsed = 0, withData = 0;
+  for (let d = start; d <= end; d = addDays(d, 1)) {
+    const v = D[ymd(d)], future = d > t;
+    if (!future) elapsed++;
+    if (v && !future) {
+      if (v.s != null) { totS += v.s; nS++; if (!best || v.s > best.s) best = { s: v.s, date: d }; }
+      if (v.d != null) { totD += v.d; nD++; }
+      withData++;
+    }
+    if (kind !== 'year') items.push({ date: d, s: v && v.s, d: v && v.d, future, has: !!v });
+  }
+  if (kind === 'year') {
+    for (let m = 0; m < 12; m++) {
+      const ms = new Date(a.getFullYear(), m, 1), me = new Date(a.getFullYear(), m + 1, 0);
+      let s = 0, dd = 0, n = 0, hasD = false;
+      for (let d = ms; d <= me && d <= t; d = addDays(d, 1)) {
+        const v = D[ymd(d)];
+        if (v && v.s != null) { s += v.s; n++; }
+        if (v && v.d != null) { dd += v.d; hasD = true; }
+      }
+      items.push({ month: m, s: n ? s : null, d: hasD ? dd : null, n, future: ms > t, has: n > 0 });
+    }
+  }
+  const span = dayDiff(end, start) + 1;
+  return { start, end, items, totS, totD, nS, nD, best, elapsed, withData, span, current: start <= t && t <= end };
+}
+function periodLabel(kind, r) {
+  const { start: s, end: e } = r;
+  if (kind === 'week') {
+    return s.getMonth() === e.getMonth()
+      ? `${s.getDate()} – ${e.getDate()} de ${MES[e.getMonth()]} de ${e.getFullYear()}`
+      : `${s.getDate()} ${MES3[s.getMonth()]}${s.getFullYear() !== e.getFullYear() ? ' ' + s.getFullYear() : ''} – ${e.getDate()} ${MES3[e.getMonth()]} ${e.getFullYear()}`;
+  }
+  if (kind === 'month') return `${cap(MES[s.getMonth()])} de ${s.getFullYear()}`;
+  return String(s.getFullYear());
+}
+const unitWord = { week: 'semana', month: 'mes', year: 'año' };
+function renderSummary() {
+  const kind = sum.kind, S = summarize(kind, sum.anchor);
+  document.querySelectorAll('#seg button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.k === kind)));
+  $('#p1').textContent = periodLabel(kind, S);
+  const daysTxt = n => n === 1 ? '1 día' : `${n} días`;
+  $('#p2').textContent = S.current
+    ? `En curso · ${daysTxt(S.withData)} con datos`
+    : S.withData ? `${daysTxt(S.withData)} con datos` : 'Sin datos';
+  $('#nextP').disabled = S.current || S.start > today();
+  $('#prevP').disabled = S.start <= earliest();
+
+  const avgS = S.nS ? S.totS / S.nS : 0, avgD = S.nD ? S.totD / S.nD : 0;
+  const long = fmtInt(S.totS).length > 7 || fmtDec(S.totD).length > 7;
+  const bestTxt = S.best ? `${cap(DOW3[S.best.date.getDay()])} ${S.best.date.getDate()} ${MES3[S.best.date.getMonth()]} · ${fmtInt(S.best.s)}` : '—';
+  $('#totals').innerHTML = `
+    <div><div class="k">Pasos</div><div class="v num${long ? ' long' : ''}">${S.nS ? fmtInt(S.totS) : '—'}</div></div>
+    <div><div class="k">Distancia</div><div class="v num${long ? ' long' : ''}">${S.nD ? fmtDec(S.totD) + '<span class="unit">km</span>' : '—'}</div></div>
+    <div class="facts">
+      <div><span>Promedio diario</span><span>${S.nS ? fmtInt(avgS) + ' pasos' : '—'}${S.nD ? ' · ' + fmtDec(avgD) + ' km' : ''}</span></div>
+      <div><span>Mejor día</span><span>${bestTxt}</span></div>
+    </div>`;
+
+  // Barras
+  const items = S.items;
+  if (sum.sel != null && (!items[sum.sel] || items[sum.sel].future || !items[sum.sel].has)) sum.sel = null;
+  const W = 340, H = 178, pl = 2, pr = 2, pt = 20, pb = 24, ih = H - pt - pb;
+  const n = items.length, cw = (W - pl - pr) / n, bw = Math.max(3, Math.min(cw * 0.62, 26));
+  const vals = items.map(i => i.s || 0);
+  const top = niceCeil(Math.max(1, ...vals));
+  const y = v => pt + ih * (1 - v / top);
+  const barAvg = kind === 'year'
+    ? (() => { const m = items.filter(i => i.has && !i.future); return m.length ? m.reduce((a, i) => a + i.s, 0) / m.length : 0; })()
+    : avgS;
+  let g = '';
+  g += `<line class="grid" x1="${pl}" x2="${W - pr}" y1="${y(top)}" y2="${y(top)}"/>`;
+  g += `<line class="grid" x1="${pl}" x2="${W - pr}" y1="${y(top / 2)}" y2="${y(top / 2)}"/>`;
+  g += `<text x="${W - pr}" y="${y(top) - 5}" text-anchor="end">${fmtInt(top)}</text>`;
+  g += `<text x="${W - pr}" y="${y(top / 2) - 5}" text-anchor="end">${fmtInt(top / 2)}</text>`;
+  g += `<line class="base" x1="${pl}" x2="${W - pr}" y1="${y(0)}" y2="${y(0)}"/>`;
+  const t = today();
+  items.forEach((it, i) => {
+    const cx = pl + i * cw + cw / 2;
+    if (it.has && !it.future && it.s != null) {
+      const h = Math.max(2, ih * (it.s / top));
+      const cls = 'b' + (sum.sel != null && sum.sel !== i ? ' dim' : '');
+      g += `<rect class="${cls}" x="${(cx - bw / 2).toFixed(2)}" y="${(y(0) - h).toFixed(2)}" width="${bw.toFixed(2)}" height="${h.toFixed(2)}" rx="${Math.min(bw / 2, 4).toFixed(2)}"/>`;
+    }
+    let lab = '';
+    if (kind === 'week') lab = DOW1[it.date.getDay()];
+    else if (kind === 'month') { const dn = it.date.getDate(); const near = sum.sel != null && sum.sel !== i && Math.abs(sum.sel - i) <= 2; if ((dn === 1 || dn % 5 === 0) && !near) lab = String(dn); }
+    else lab = MES1[it.month];
+    const isNow = kind === 'year' ? (it.month === t.getMonth() && S.current) : ymd(it.date) === ymd(t);
+    if (lab || (sum.sel === i && kind === 'month')) {
+      const txt = sum.sel === i && kind === 'month' ? String(it.date.getDate()) : lab;
+      g += `<text x="${cx.toFixed(2)}" y="${H - 7}" text-anchor="middle"${sum.sel === i || (sum.sel == null && isNow) ? ' class="on"' : ''}>${txt}</text>`;
+    }
+  });
+  if (barAvg > 0) {
+    g += `<line class="avg" x1="${pl}" x2="${W - pr}" y1="${y(barAvg)}" y2="${y(barAvg)}"/>`;
+    g += `<text class="avgt" x="${pl}" y="${y(barAvg) - 5}">Prom. ${fmtInt(barAvg)}</text>`;
+  }
+  items.forEach((it, i) => {
+    if (it.has && !it.future) g += `<rect class="hit" data-i="${i}" x="${(pl + i * cw).toFixed(2)}" y="0" width="${cw.toFixed(2)}" height="${H}"/>`;
+  });
+  $('#chart').innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Pasos por ${kind === 'year' ? 'mes' : 'día'}">${g}</svg>`;
+
+  // Detalle de la barra elegida
+  const det = $('#detail');
+  if (sum.sel != null) {
+    const it = items[sum.sel];
+    const title = kind === 'year' ? cap(MES[it.month]) : `${cap(DOW[it.date.getDay()])} ${it.date.getDate()} de ${MES[it.date.getMonth()]}`;
+    const parts = [it.s != null ? fmtInt(it.s) + ' pasos' : null, it.d != null ? fmtDec(it.d) + ' km' : null];
+    if (kind === 'year' && it.n) parts.push(fmtInt(it.s / it.n) + ' al día');
+    det.innerHTML = `<div class="t1">${title}</div><div class="t2">${parts.filter(Boolean).join(' · ')}</div>`;
+  } else {
+    det.innerHTML = `<div class="t1">Pasos por ${kind === 'year' ? 'mes' : 'día'}</div><div class="t2" style="font-weight:400;color:var(--muted);font-size:15px">Toca una barra para ver el detalle.</div>`;
+  }
+
+  // Lista
+  const rows = items.map((it, i) => ({ it, i })).filter(o => !o.it.future);
+  if (!S.withData) {
+    $('#list').innerHTML = `<div class="empty-note">No hay datos de este ${unitWord[kind]}.</div>`;
+  } else {
+    let h = `<div class="lrow head"><span>${kind === 'year' ? 'Mes' : 'Día'}</span><span class="n">Pasos</span><span class="n">Km</span></div>`;
+    for (const { it, i } of rows) {
+      const lab = kind === 'year' ? cap(MES[it.month]) : `${cap(DOW3[it.date.getDay()])} ${it.date.getDate()}`;
+      h += `<button class="lrow${sum.sel === i ? ' sel' : ''}" data-i="${i}"${it.has ? '' : ' disabled style="opacity:1"'}><span>${lab}</span><span class="n">${it.s != null ? fmtInt(it.s) : '—'}</span><span class="n km">${it.d != null ? fmtDec(it.d) : '—'}</span></button>`;
+    }
+    $('#list').innerHTML = h;
+  }
+}
+
+/* ---------- Atajo y datos ---------- */
+let boxMode = 'main', boxMsg = null;
+function appUrl() { return /\.github\.io$/.test(location.hostname) ? location.origin + location.pathname : APP_URL; }
+function renderBox() {
+  const b = $('#boxBody');
+  const msg = boxMsg ? `<div class="msg ${boxMsg.ok ? 'ok' : 'err'}">${esc(boxMsg.text)}</div>` : '';
+  if (boxMode === 'paste') {
+    b.innerHTML = `
+      <div class="sect"><h3>Pegar un reporte</h3>
+        <p>Pega el texto que arma el atajo: una línea P con las fechas y los pasos debajo, y una línea D con las fechas y las distancias.</p></div>
+      ${msg}
+      <div class="group"><div class="field"><label for="pasteText">Reporte</label><textarea id="pasteText" spellcheck="false" autocapitalize="off" autocomplete="off"></textarea></div></div>
+      <button class="btn primary" id="pasteGo">Agregar</button>
+      <button class="btn plain" id="pasteBack">Cancelar</button>`;
+    $('#pasteGo').onclick = () => {
+      const parsed = parseReport($('#pasteText').value);
+      const n = Object.keys(parsed).length;
+      if (!n) { boxMsg = { text: 'No encontré fechas con pasos o distancia en ese texto.' }; renderBox(); return; }
+      mergeReport(parsed, Date.now());
+      st.lastReport = Date.now(); save();
+      boxMode = 'main'; boxMsg = { ok: true, text: n === 1 ? 'Se agregó 1 día.' : `Se agregaron ${n} días.` };
+      renderAll(); renderBox();
+    };
+    $('#pasteBack').onclick = () => { boxMode = 'main'; boxMsg = null; renderBox(); };
+    return;
+  }
+  const nDays = Object.keys(st.days).length;
+  const url = appUrl() + '#r=';
+  const bad = st.lastBad ? `
+    <div class="sect"><h3>Último envío sin leer</h3>
+    <div class="group"><pre class="raw">${esc(st.lastBad.text || '(vacío)')}</pre>
+    <div class="copyrow"><div><span class="ck">${cap(relTime(st.lastBad.ts))}</span></div><button data-copy="bad">Copiar</button></div></div>
+    <p style="margin:8px 4px 0;font-size:13px">Revisa que el texto del atajo tenga las líneas P y D, y que las fechas y los valores salgan uno por línea.</p></div>` : '';
+  b.innerHTML = `
+    ${msg}
+    <div class="sect"><p>iOS no deja que una página lea Salud. El atajo «${SHORTCUT}» lee tus pasos y tu distancia del último año y abre esta app con esos datos. Ábrela siempre desde el ícono del atajo para ver lo último.</p></div>
+    <div class="group">
+      <div class="grow"><span>Último reporte</span><span class="gv">${st.lastReport ? cap(relTime(st.lastReport)) : 'Ninguno todavía'}</span></div>
+      <div class="grow"><span>Días registrados</span><span class="gv">${fmtInt(nDays)}</span></div>
+    </div>
+    <button class="btn primary" id="btnRun">Actualizar desde Salud</button>
+
+    <div class="sect"><h3>Texto del atajo</h3>
+    <div class="group"><div class="copyrow"><div class="tline">
+      P<br>
+      <span class="chip">Muestras de salud</span> → Fecha de inicio<br>
+      <span class="chip">Muestras de salud</span> → Valor<br>
+      D<br>
+      <span class="chip">Muestras de salud 2</span> → Fecha de inicio<br>
+      <span class="chip">Muestras de salud 2</span> → Valor
+    </div></div></div>
+    <p style="margin:8px 4px 0;font-size:13px">A las fechas dales el formato ISO 8601. Cada variable va en su propia línea.</p></div>
+
+    <div class="sect"><h3>Dirección para la acción URL</h3>
+    <div class="group">
+      <div class="copyrow"><div><span class="ck">Seguida del resultado de «Codificar URL»</span><code>${esc(url)}</code></div><button data-copy="url">Copiar</button></div>
+    </div></div>
+
+    ${bad}
+
+    <div class="stack">
+      <button class="btn plain" id="btnPaste">Pegar un reporte</button>
+      ${nDays ? '<button class="btn danger" id="btnWipe">Borrar los datos de este teléfono</button>' : ''}
+    </div>
+    <div class="sect"><p>Los datos de Salud quedan solo en este teléfono, en Safari. Viajan en la dirección después del signo #, que no se envía a ningún servidor.</p></div>`;
+  const vals = { url, bad: st.lastBad ? st.lastBad.text : '' };
+  b.querySelectorAll('[data-copy]').forEach(btn => btn.onclick = () => copy(vals[btn.dataset.copy], btn));
+  $('#btnRun').onclick = () => { closePanels(); runShortcut(); };
+  $('#btnPaste').onclick = () => { boxMode = 'paste'; boxMsg = null; renderBox(); };
+  const wipe = $('#btnWipe');
+  if (wipe) wipe.onclick = () => {
+    if (wipe.dataset.confirm) {
+      st = { days: {}, lastReport: null, lastBad: null };
+      save(); boxMsg = { ok: true, text: 'Se borraron los datos de este teléfono. La próxima vez que abras la app desde el atajo vuelven los del último año.' };
+      renderAll(); renderBox();
+    } else {
+      wipe.dataset.confirm = '1';
+      wipe.textContent = 'Toca otra vez para borrar';
+    }
+  };
+}
+async function copy(text, btn) {
+  const old = btn.textContent;
+  try { await navigator.clipboard.writeText(text); btn.textContent = 'Copiado'; }
+  catch (e) {
+    const code = btn.parentElement.querySelector('code');
+    if (code) { const r = document.createRange(); r.selectNodeContents(code); const s = getSelection(); s.removeAllRanges(); s.addRange(r); }
+    btn.textContent = 'Copia a mano';
+  }
+  setTimeout(() => { btn.textContent = old; }, 1600);
+}
+
+/* ---------- Paneles y eventos ---------- */
+function openPanel(id) { const p = $(id); p.classList.add('open'); p.setAttribute('aria-hidden', 'false'); $('#today').inert = true; }
+function closePanels() { document.querySelectorAll('.panel.open').forEach(p => { p.classList.remove('open'); p.setAttribute('aria-hidden', 'true'); }); $('#today').inert = false; }
+function openBox() { boxMode = 'main'; boxMsg = null; renderBox(); openPanel('#boxPanel'); }
+function openSummary(kind) { sum.kind = kind; sum.anchor = new Date(cur); sum.sel = null; renderSummary(); openPanel('#sumPanel'); $('#sumPanel .pbody').scrollTop = 0; }
+
+let tt = null;
+function toast(t) { const el = $('#toast'); el.textContent = t; el.classList.add('show'); clearTimeout(tt); tt = setTimeout(() => el.classList.remove('show'), 2200); }
+
+function renderAll() {
+  renderDay(); renderBanner(); renderStatus();
+  if ($('#sumPanel').classList.contains('open')) renderSummary();
+}
+
+$('#prevDay').onclick = () => { cur = addDays(cur, -1); followToday = false; renderAll(); };
+$('#nextDay').onclick = () => { cur = addDays(cur, 1); followToday = dayDiff(today(), cur) <= 0; renderAll(); };
+$('#dayLabel').onclick = () => { cur = today(); followToday = true; renderAll(); };
+$('#btnSync').onclick = () => runShortcut();
+$('#btnBox').onclick = openBox;
+document.querySelectorAll('[data-open]').forEach(b => b.onclick = () => openSummary(b.dataset.open));
+document.querySelectorAll('[data-close]').forEach(b => b.onclick = closePanels);
+$('#seg').onclick = e => { const b = e.target.closest('button[data-k]'); if (!b) return; sum.kind = b.dataset.k; sum.sel = null; renderSummary(); };
+$('#prevP').onclick = () => { sum.anchor = shift(sum.kind, sum.anchor, -1); sum.sel = null; renderSummary(); };
+$('#nextP').onclick = () => { sum.anchor = shift(sum.kind, sum.anchor, 1); sum.sel = null; renderSummary(); };
+$('#chart').onclick = e => { const r = e.target.closest('[data-i]'); if (!r) return; const i = +r.dataset.i; sum.sel = sum.sel === i ? null : i; renderSummary(); };
+$('#list').onclick = e => { const r = e.target.closest('button[data-i]'); if (!r) return; const i = +r.dataset.i; sum.sel = sum.sel === i ? null : i; renderSummary(); };
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closePanels(); });
+
+// Deslizar a los lados en la vista del día para cambiar de día
+let sx = null, sy = null;
+$('#today').addEventListener('touchstart', e => { const t = e.touches[0]; sx = t.clientX; sy = t.clientY; }, { passive: true });
+$('#today').addEventListener('touchend', e => {
+  if (sx == null) return;
+  const t = e.changedTouches[0], dx = t.clientX - sx, dy = t.clientY - sy; sx = null;
+  if (Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
+  if (dx > 0 && !$('#prevDay').disabled) $('#prevDay').click();
+  if (dx < 0 && !$('#nextDay').disabled) $('#nextDay').click();
+}, { passive: true });
+
+// Arranque
+load();
+importFromHash();
+renderAll();
+afterImport();
+setInterval(() => { if (document.visibilityState === 'visible' && followToday && ymd(cur) !== ymd(today())) { cur = today(); renderAll(); } }, 60000);
+window.__pasos = { parseReport, parseDate, parseNum, summarize, st: () => st };
+})();
+</script>
+</body>
+</html>
