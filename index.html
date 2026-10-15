@@ -3,6 +3,11 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Pasos">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#F2F2F7" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
 <link rel="apple-touch-icon" href="icon-180.png">
@@ -174,7 +179,7 @@ button:disabled{cursor:default;opacity:.3}
 .lrow.sel .n:not(.km){color:var(--accent);font-weight:600}
 .empty-note{color:var(--muted);font-size:15px;text-align:center;padding:24px 8px}
 
-/* ---------- Atajo y datos (estilos) ---------- */
+/* ---------- Buzón y atajo (estilos) ---------- */
 .sect h3{font-size:13px;font-weight:600;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);margin:8px 0 8px 4px}
 .sect p{margin:0;font-size:15px;color:var(--muted);line-height:1.45}
 .group{background:var(--surface);border-radius:14px;box-shadow:var(--shadow);overflow:hidden}
@@ -212,7 +217,10 @@ button:disabled{cursor:default;opacity:.3}
   transition:opacity .2s,transform .2s;
 }
 .toast.show{opacity:1;transform:translate(-50%,0)}
+.icon.spin svg{animation:spin 1s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
 @media (prefers-reduced-motion: reduce){
+  .icon.spin svg{animation:none}
   .panel,.panel.open,.toast{transition:none}
 }
 </style>
@@ -221,7 +229,7 @@ button:disabled{cursor:default;opacity:.3}
 <div id="today">
   <div class="col">
     <header class="bar">
-      <button class="icon" id="btnBox" aria-label="Atajo y datos">
+      <button class="icon" id="btnBox" aria-label="Buzón y atajo">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="8.5" y="3.5" width="12" height="12" rx="3.2"/><path d="M15.5 15.5v1.3a3.2 3.2 0 0 1-3.2 3.2H6.7a3.2 3.2 0 0 1-3.2-3.2v-5.6a3.2 3.2 0 0 1 3.2-3.2h1.8"/></svg>
       </button>
       <div class="daynav">
@@ -289,11 +297,11 @@ button:disabled{cursor:default;opacity:.3}
   </div>
 </section>
 
-<!-- Atajo y datos -->
-<section class="panel" id="boxPanel" aria-label="Atajo y datos" aria-hidden="true">
+<!-- Buzón y atajo -->
+<section class="panel" id="boxPanel" aria-label="Buzón y atajo" aria-hidden="true">
   <div class="phead">
     <span></span>
-    <h2>Atajo y datos</h2>
+    <h2>Buzón y atajo</h2>
     <button class="done" data-close>Listo</button>
   </div>
   <div class="pbody">
@@ -309,6 +317,7 @@ button:disabled{cursor:default;opacity:.3}
 const KEY = 'pasos.v1';
 const SHORTCUT = 'Pasos';
 const APP_URL = 'https://pablocarvallo.github.io/pasos/';
+const DEFAULT_REPO = 'pablocarvallo/pasos-datos';
 
 const $ = s => document.querySelector(s);
 const DOW = ['domingo','lunes','martes','miércoles','jueves','viernes','sábado'];
@@ -421,19 +430,28 @@ function readValue(kind, vs, us) {
   return Math.round(v * 1000) / 1000;
 }
 const HEAD_S = /^(p|pasos|steps)$/i, HEAD_D = /^(d|dist|distancia)$/i;
+// Motivo por el que el último reporte no se aceptó (null si se leyó bien).
+let parseIssue = null;
+const ISSUE_MSG = {
+  ungrouped: 'El atajo envía varias muestras por día. En las dos búsquedas de Salud, elige «Agrupar por: Día».',
+  mismatch: 'El atajo envió distinta cantidad de fechas que de valores. Revisa el Texto del atajo: cada bloque lleva la Fecha de inicio y el Valor de la misma búsqueda.',
+  empty: 'El último reporte del atajo no trae fechas con pasos o distancia.'
+};
 function parseReport(text) {
+  parseIssue = null;
   const out = {};
   const put = (date, kind, val) => { if (date && val != null) (out[date] = out[date] || {})[kind] = val; };
   const lines = String(text || '').replace(/\r/g, '').split('\n').map(l => l.trim()).filter(Boolean);
   // Formato en bloques (el del atajo): una línea P, luego todas las fechas y todos los valores;
   // una línea D, luego fechas, valores y, si vienen, unidades. Se emparejan en orden.
-  let kind = null, dates = [], vals = [], units = [];
+  let kind = null, dates = [], vals = [], units = [], direct = new Set();
   const flush = () => {
-    if (kind) {
-      const n = Math.min(dates.length, vals.length);
-      for (let i = 0; i < n; i++) put(dates[i], kind, readValue(kind, vals[i], units[i] || units[0]));
+    if (kind && (dates.length || vals.length)) {
+      if (new Set(dates).size < dates.length) parseIssue = parseIssue || 'ungrouped';
+      else if (dates.length !== vals.length) parseIssue = parseIssue || 'mismatch';
+      else for (let i = 0; i < dates.length; i++) put(dates[i], kind, readValue(kind, vals[i], units[i] || units[0]));
     }
-    dates = []; vals = []; units = [];
+    dates = []; vals = []; units = []; direct = new Set();
   };
   for (const l of lines) {
     // Formato por líneas: P;fecha;pasos  o  D;fecha;distancia;unidad
@@ -451,14 +469,19 @@ function parseReport(text) {
     if (dt) {
       const rest = dt.s.slice(dt.end);
       // Si la línea trae fecha y valor juntos, se registra de inmediato.
-      if (/\d/.test(rest)) put(dt.date, kind, readValue(kind, rest));
-      else dates.push(dt.date);
+      if (/\d/.test(rest)) {
+        if (direct.has(dt.date)) parseIssue = parseIssue || 'ungrouped';
+        direct.add(dt.date);
+        put(dt.date, kind, readValue(kind, rest));
+      } else dates.push(dt.date);
       continue;
     }
     if (/\d/.test(l)) { vals.push(l); continue; }
     if (unitOf(l)) units.push(l);
   }
   flush();
+  if (parseIssue) return {};
+  if (!Object.keys(out).length) parseIssue = 'empty';
   return out;
 }
 function mergeReport(parsed, ts) {
@@ -473,7 +496,7 @@ function mergeReport(parsed, ts) {
 }
 
 /* ---------- Estado ---------- */
-let st = { days: {}, lastReport: null, lastBad: null };
+let st = { days: {}, conn: null, lastReport: null, lastBad: null };
 function load() { try { const r = localStorage.getItem(KEY); if (r) st = Object.assign(st, JSON.parse(r)); } catch (e) {} }
 function save() { try { localStorage.setItem(KEY, JSON.stringify(st)); } catch (e) {} }
 
@@ -494,7 +517,7 @@ function example() {
   out[ymd(t)] = { s: 3500, d: 2.58, t: 0 };
   return (EXAMPLE = out);
 }
-const isExample = () => !Object.keys(st.days).length;
+const isExample = () => !st.conn && !Object.keys(st.days).length;
 const days = () => isExample() ? example() : st.days;
 function earliest() { const k = Object.keys(days()).sort(); return k.length ? fromYmd(k[0]) : today(); }
 
@@ -511,7 +534,7 @@ function importFromHash() {
   const parsed = parseReport(raw);
   const n = Object.keys(parsed).length;
   if (!n) {
-    st.lastBad = { ts: Date.now(), text: raw.slice(0, 3000) };
+    st.lastBad = { ts: Date.now(), text: raw.slice(0, 3000), why: parseIssue };
     save();
     justImported = { bad: true };
     return true;
@@ -532,30 +555,141 @@ function afterImport() {
 }
 window.addEventListener('hashchange', () => { if (importFromHash()) { closePanels(); renderAll(); afterImport(); } });
 
+/* ---------- Buzón en GitHub ----------
+   El atajo deja cada reporte como un issue en un repositorio privado. Cada reporte
+   trae el último año completo, así que al abrir la app basta con leer el más reciente. */
+const ghHeaders = token => ({ Authorization: 'Bearer ' + token, Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28' });
+class BoxError extends Error { constructor(kind, msg) { super(msg); this.kind = kind; } }
+const NET_MSG = `No se pudo llegar a GitHub. Revisa la conexión. Si estás viendo la app dentro de Claude, ábrela desde ${APP_URL}: aquí la página no puede llamar a GitHub.`;
+async function ghGet(path, token) {
+  let r;
+  try { r = await fetch('https://api.github.com' + path, { headers: ghHeaders(token), cache: 'no-store' }); }
+  catch (e) { throw new BoxError('net', NET_MSG); }
+  if (r.status === 401) throw new BoxError('token', 'GitHub rechazó el token: venció o fue revocado. Crea uno nuevo y vuelve a conectar el buzón.');
+  if (r.status === 403 || r.status === 404) throw new BoxError('access', 'El token no puede leer el buzón. Revisa que incluya el repositorio y que Issues tenga acceso «Read and write».');
+  if (!r.ok) throw new BoxError('net', `GitHub respondió con un error (${r.status}). Intenta de nuevo en un rato.`);
+  return r.json();
+}
+
+let reading = null, lastRead = 0, boxError = null, busy = false;
+// all = false: solo reportes más nuevos que el último leído (en la práctica, el más reciente).
+// all = true: recorre todos los reportes del buzón, para recuperar el historial completo.
+function readBox(all) {
+  if (!st.conn) return Promise.resolve(0);
+  if (reading) return reading;
+  reading = (async () => {
+    setBusy(true);
+    let found = 0;
+    try {
+      const per = all ? 100 : 5;
+      for (let page = 1; page <= (all ? 60 : 1); page++) {
+        const arr = await ghGet(`/repos/${st.conn.repo}/issues?state=all&sort=created&direction=desc&per_page=${per}&page=${page}`, st.conn.token);
+        let stop = false;
+        for (const it of arr) {
+          if (it.pull_request) continue;
+          const ts = Date.parse(it.created_at);
+          if (!all && st.lastReport && ts <= st.lastReport) { stop = true; break; }
+          const parsed = parseReport(it.body);
+          if (Object.keys(parsed).length) {
+            mergeReport(parsed, ts);
+            found++;
+            if (!st.lastReport || ts > st.lastReport) st.lastReport = ts;
+            if (st.lastBad && st.lastBad.ts < ts) st.lastBad = null;
+            if (!all) { stop = true; break; }
+          } else if (!st.lastBad || ts > st.lastBad.ts) {
+            if (!st.lastReport || ts > st.lastReport) {
+              st.lastBad = { ts, n: it.number, why: parseIssue, text: ((it.title ? it.title + '\n' : '') + (it.body || '')).slice(0, 3000) };
+            }
+          }
+        }
+        if (stop || arr.length < per) break;
+      }
+      boxError = null;
+      lastRead = Date.now();
+      save();
+    } catch (e) {
+      boxError = e instanceof BoxError ? e : new BoxError('net', NET_MSG);
+    } finally {
+      setBusy(false);
+      reading = null;
+      renderAll();
+      if (document.getElementById('boxPanel').classList.contains('open') && boxMode === 'main') renderBox();
+    }
+    return found;
+  })();
+  return reading;
+}
+
+async function connect(repoIn, tokenIn) {
+  const repo = String(repoIn).trim().replace(/^https?:\/\/github\.com\//i, '').replace(/\.git$/i, '').replace(/\/+$/, '');
+  const token = String(tokenIn).trim();
+  if (!/^[\w.-]+\/[\w.-]+$/.test(repo)) throw new Error('Escribe el repositorio como usuario/nombre, por ejemplo pablocarvallo/pasos-datos.');
+  if (!token) throw new Error('Pega el token que creaste en GitHub.');
+  let info;
+  try { info = await ghGet(`/repos/${repo}`, token); }
+  catch (e) {
+    if (e.kind === 'access') throw new Error('No se encontró el repositorio, o el token no tiene acceso a él. Revisa el nombre y que el token incluya ese repositorio.');
+    throw new Error(e.message);
+  }
+  try { await ghGet(`/repos/${repo}/issues?state=all&per_page=1`, token); }
+  catch (e) {
+    if (e.kind === 'access') throw new Error('El token no puede leer los issues. En GitHub, dale a Issues el acceso «Read and write».');
+    throw new Error(e.message);
+  }
+  st.conn = { repo, token };
+  st.lastReport = null; st.lastBad = null;
+  boxError = null;
+  save();
+  await readBox(false);
+  return info;
+}
+
 /* ---------- Actualizar desde Salud (ejecuta el atajo) ---------- */
-let opening = false;
+let pending = null;
 function runShortcut() {
-  opening = true;
+  if (!st.conn) { openBox(); return; }
+  pending = { prev: st.lastReport || 0, left: false };
   setStatus('Abriendo Atajos…');
   setTimeout(() => {
-    if (opening && document.visibilityState === 'visible') {
-      opening = false;
-      setStatus(`Si Atajos no se abrió, toca el ícono «${SHORTCUT}» en tu pantalla de inicio.`);
+    if (pending && !pending.left && document.visibilityState === 'visible') {
+      pending = null;
+      setStatus(`Atajos no se abrió. Revisa que el atajo se llame «${SHORTCUT}».`);
     }
-  }, 5000);
+  }, 6000);
   location.href = 'shortcuts://run-shortcut?name=' + encodeURIComponent(SHORTCUT);
 }
+async function waitForReport() {
+  const p = pending;
+  for (let i = 0; i < 8 && pending === p; i++) {
+    setStatus('Esperando el reporte del atajo…');
+    await readBox(false);
+    if ((st.lastReport || 0) > p.prev) {
+      pending = null; cur = today(); followToday = true;
+      renderAll(); toast('Datos actualizados');
+      return;
+    }
+    if (boxError) { pending = null; renderAll(); return; }
+    if (st.lastBad && st.lastBad.ts > p.prev) { pending = null; renderAll(); toast('El reporte llegó, pero no se pudo leer'); return; }
+    await sleep(2500);
+  }
+  if (pending === p) {
+    pending = null;
+    renderAll();
+    setStatus(`No llegó un reporte nuevo. Revisa que el atajo «${SHORTCUT}» termine sin errores.`);
+  }
+}
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'hidden') return;
-  opening = false;
+  if (document.visibilityState === 'hidden') { if (pending) pending.left = true; return; }
   if (followToday) cur = today();
-  renderAll();
+  if (pending && pending.left) { waitForReport(); return; }
+  if (Date.now() - lastRead > 15000) readBox(false); else renderAll();
 });
 window.addEventListener('pageshow', e => { if (e.persisted) renderAll(); });
 
 /* ---------- Vista del día ---------- */
 let cur = today(), followToday = true;
 function setStatus(t) { $('#status').textContent = t; }
+function setBusy(b) { busy = b; $('#btnSync').classList.toggle('spin', b); }
 
 function renderDay() {
   const D = days(), t = today(), k = ymd(cur), diff = dayDiff(t, cur);
@@ -577,18 +711,22 @@ function renderBanner() {
   const b = $('#banner');
   let text = '', btn = '', act = null;
   if (isExample()) { text = 'Estás viendo datos de ejemplo.'; btn = 'Conectar'; act = openBox; }
-  else if (st.lastBad) { text = 'El último envío del atajo no se pudo leer.'; btn = 'Revisar'; act = openBox; }
+  else if (boxError && boxError.kind !== 'net') { text = boxError.message; btn = 'Revisar'; act = openBox; }
+  else if (st.conn && !Object.keys(st.days).length && !busy) { text = 'Buzón conectado. Toca Actualizar para traer tus datos de Salud.'; btn = 'Actualizar'; act = runShortcut; }
+  else if (st.lastBad) { text = ISSUE_MSG[st.lastBad.why] || 'El último reporte del atajo no se pudo leer.'; btn = 'Revisar'; act = openBox; }
   b.hidden = !text;
   $('#bannerText').textContent = text;
   $('#bannerBtn').textContent = btn;
   $('#bannerBtn').onclick = act;
 }
 function renderStatus() {
-  if (opening) return;
+  if (pending) return;
   const v = days()[ymd(cur)];
   let s = '';
-  if (isExample()) s = 'Ejemplo: así se verán tus pasos de cada día.';
-  else if (!v) s = 'Sin datos para este día.';
+  if (busy) s = 'Leyendo el buzón…';
+  else if (isExample()) s = 'Ejemplo: así se verán tus pasos de cada día.';
+  else if (boxError && boxError.kind === 'net') s = 'Sin conexión con GitHub. Se muestran los datos guardados.';
+  else if (!v) s = Object.keys(st.days).length ? 'Sin datos para este día.' : '';
   else if (st.lastReport) {
     s = 'Actualizado ' + relTime(st.lastReport);
     if (dayDiff(today(), cur) === 0 && Date.now() - st.lastReport > 30 * 60000) s += ' · toca ↻ para traer lo último';
@@ -746,9 +884,9 @@ function renderSummary() {
   }
 }
 
-/* ---------- Atajo y datos ---------- */
+/* ---------- Buzón y atajo ---------- */
 let boxMode = 'main', boxMsg = null;
-function appUrl() { return /\.github\.io$/.test(location.hostname) ? location.origin + location.pathname : APP_URL; }
+function mask(tok) { return tok.length > 14 ? tok.slice(0, 11) + '…' + tok.slice(-4) : '••••'; }
 function renderBox() {
   const b = $('#boxBody');
   const msg = boxMsg ? `<div class="msg ${boxMsg.ok ? 'ok' : 'err'}">${esc(boxMsg.text)}</div>` : '';
@@ -763,9 +901,9 @@ function renderBox() {
     $('#pasteGo').onclick = () => {
       const parsed = parseReport($('#pasteText').value);
       const n = Object.keys(parsed).length;
-      if (!n) { boxMsg = { text: 'No encontré fechas con pasos o distancia en ese texto.' }; renderBox(); return; }
+      if (!n) { boxMsg = { text: ISSUE_MSG[parseIssue] || 'No encontré fechas con pasos o distancia en ese texto.' }; renderBox(); return; }
       mergeReport(parsed, Date.now());
-      st.lastReport = Date.now(); save();
+      save();
       boxMode = 'main'; boxMsg = { ok: true, text: n === 1 ? 'Se agregó 1 día.' : `Se agregaron ${n} días.` };
       renderAll(); renderBox();
     };
@@ -773,58 +911,106 @@ function renderBox() {
     return;
   }
   const nDays = Object.keys(st.days).length;
-  const url = appUrl() + '#r=';
-  const bad = st.lastBad ? `
-    <div class="sect"><h3>Último envío sin leer</h3>
-    <div class="group"><pre class="raw">${esc(st.lastBad.text || '(vacío)')}</pre>
-    <div class="copyrow"><div><span class="ck">${cap(relTime(st.lastBad.ts))}</span></div><button data-copy="bad">Copiar</button></div></div>
-    <p style="margin:8px 4px 0;font-size:13px">Revisa que el texto del atajo tenga las líneas P y D, y que las fechas y los valores salgan uno por línea.</p></div>` : '';
-  b.innerHTML = `
-    ${msg}
-    <div class="sect"><p>iOS no deja que una página lea Salud. El atajo «${SHORTCUT}» lee tus pasos y tu distancia del último año y abre esta app con esos datos. Ábrela siempre desde el ícono del atajo para ver lo último.</p></div>
-    <div class="group">
-      <div class="grow"><span>Último reporte</span><span class="gv">${st.lastReport ? cap(relTime(st.lastReport)) : 'Ninguno todavía'}</span></div>
-      <div class="grow"><span>Días registrados</span><span class="gv">${fmtInt(nDays)}</span></div>
-    </div>
-    <button class="btn primary" id="btnRun">Actualizar desde Salud</button>
-
+  const textoAtajo = `
     <div class="sect"><h3>Texto del atajo</h3>
     <div class="group"><div class="copyrow"><div class="tline">
       P<br>
-      <span class="chip">Muestras de salud</span> → Fecha de inicio<br>
-      <span class="chip">Muestras de salud</span> → Valor<br>
+      <span class="chip">Búsqueda de pasos</span> → Fecha de inicio<br>
+      <span class="chip">Búsqueda de pasos</span> → Valor<br>
       D<br>
-      <span class="chip">Muestras de salud 2</span> → Fecha de inicio<br>
-      <span class="chip">Muestras de salud 2</span> → Valor
+      <span class="chip">Búsqueda de distancia</span> → Fecha de inicio<br>
+      <span class="chip">Búsqueda de distancia</span> → Valor
     </div></div></div>
-    <p style="margin:8px 4px 0;font-size:13px">A las fechas dales el formato ISO 8601. Cada variable va en su propia línea.</p></div>
+    <p style="margin:8px 4px 0;font-size:13px">A las fechas dales el formato ISO 8601. Cada variable va en su propio renglón.</p></div>`;
+  const wipeBtn = nDays ? '<button class="btn danger" id="btnWipe">Borrar los datos de este teléfono</button>' : '';
+  if (!st.conn) {
+    b.innerHTML = `
+      <div class="sect"><p>iOS no deja que una app web lea Salud. El atajo «${SHORTCUT}» lee tus pasos y tu distancia del último año y los deja en un buzón privado de GitHub; la app los lee de ahí cada vez que la abres.</p></div>
+      ${msg}
+      <div class="sect"><h3>Conectar el buzón</h3>
+      <div class="group">
+        <div class="field"><label for="inRepo">Repositorio</label><input id="inRepo" value="${esc(DEFAULT_REPO)}" autocapitalize="off" autocomplete="off" spellcheck="false"></div>
+        <div class="field"><label for="inToken">Token</label><input id="inToken" type="password" placeholder="github_pat_…" autocapitalize="off" autocomplete="off" spellcheck="false"></div>
+      </div></div>
+      <button class="btn primary" id="btnConnect">Probar y conectar</button>
+      <div class="stack">
+        <button class="btn plain" id="btnPaste">Pegar un reporte</button>
+        ${wipeBtn}
+      </div>
+      <div class="sect"><p>El token queda guardado solo en este teléfono.</p></div>`;
+    $('#btnConnect').onclick = async () => {
+      const btn = $('#btnConnect');
+      btn.disabled = true; btn.textContent = 'Probando…';
+      try {
+        await connect($('#inRepo').value, $('#inToken').value);
+        boxMsg = Object.keys(st.days).length
+          ? { ok: true, text: 'Buzón conectado. Ya están tus datos.' }
+          : { ok: true, text: 'Buzón conectado. Copia abajo los datos para el atajo y después toca Actualizar desde Salud.' };
+      } catch (e) { boxMsg = { text: e.message }; }
+      renderAll(); renderBox();
+    };
+  } else {
+    const c = st.conn;
+    const url = `https://api.github.com/repos/${c.repo}/issues`;
+    const bad = st.lastBad ? `
+      <div class="sect"><h3>Último reporte sin leer</h3>
+      <div class="group"><pre class="raw">${esc(st.lastBad.text || '(vacío)')}</pre>
+      <div class="copyrow"><div><span class="ck">${st.lastBad.n ? '#' + st.lastBad.n + ' · ' : ''}${relTime(st.lastBad.ts)}</span></div><button data-copy="bad">Copiar</button></div></div>
+      <p style="margin:8px 4px 0;font-size:13px">${esc(ISSUE_MSG[st.lastBad.why] || 'Revisa que el Texto del atajo tenga las líneas P y D, con las fechas y los valores uno por renglón.')}</p></div>` : '';
+    b.innerHTML = `
+      ${msg}
+      ${boxError ? `<div class="msg err">${esc(boxError.message)}</div>` : ''}
+      <div class="group">
+        <div class="grow"><span>Repositorio</span><span class="gv">${esc(c.repo)}</span></div>
+        <div class="grow"><span>Último reporte</span><span class="gv">${st.lastReport ? cap(relTime(st.lastReport)) : 'Ninguno todavía'}</span></div>
+        <div class="grow"><span>Días registrados</span><span class="gv">${fmtInt(nDays)}</span></div>
+      </div>
+      <button class="btn primary" id="btnRun">Actualizar desde Salud</button>
 
-    <div class="sect"><h3>Dirección para el segundo Texto</h3>
-    <div class="group">
-      <div class="copyrow"><div><span class="ck">Seguida del resultado de «Codificar URL»</span><code>${esc(url)}</code></div><button data-copy="url">Copiar</button></div>
-    </div></div>
+      <div class="sect"><h3>Datos para «Obtener contenido de URL»</h3>
+      <div class="group">
+        <div class="copyrow"><div><span class="ck">URL · método POST</span><code>${esc(url)}</code></div><button data-copy="url">Copiar</button></div>
+        <div class="copyrow"><div><span class="ck">Encabezado Authorization</span><code>Bearer ${esc(mask(c.token))}</code></div><button data-copy="auth">Copiar</button></div>
+        <div class="copyrow"><div><span class="ck">Campo title del cuerpo JSON</span><code>${SHORTCUT}</code></div><button data-copy="title">Copiar</button></div>
+      </div>
+      <p style="margin:8px 4px 0;font-size:13px">El campo body del cuerpo JSON es la variable Texto.</p></div>
 
-    ${bad}
+      ${textoAtajo}
+      ${bad}
 
-    <div class="stack">
-      <button class="btn plain" id="btnPaste">Pegar un reporte</button>
-      ${nDays ? '<button class="btn danger" id="btnWipe">Borrar los datos de este teléfono</button>' : ''}
-    </div>
-    <div class="sect"><p>Los datos de Salud quedan solo en este teléfono, en Safari. Viajan en la dirección después del signo #, que no se envía a ningún servidor.</p></div>`;
-  const vals = { url, bad: st.lastBad ? st.lastBad.text : '' };
-  b.querySelectorAll('[data-copy]').forEach(btn => btn.onclick = () => copy(vals[btn.dataset.copy], btn));
-  $('#btnRun').onclick = () => { closePanels(); runShortcut(); };
+      <div class="stack">
+        <button class="btn plain" id="btnAll">Recuperar todo el historial del buzón</button>
+        <button class="btn plain" id="btnPaste">Pegar un reporte</button>
+        <button class="btn plain" id="btnDisc">Desconectar el buzón</button>
+        ${wipeBtn}
+      </div>
+      <div class="sect"><p>El token queda guardado solo en este teléfono. Tus datos de Salud quedan en tu repositorio privado y en este teléfono.</p></div>`;
+    const vals = { url, auth: 'Bearer ' + c.token, title: SHORTCUT, bad: st.lastBad ? st.lastBad.text : '' };
+    b.querySelectorAll('[data-copy]').forEach(btn => btn.onclick = () => copy(vals[btn.dataset.copy], btn));
+    $('#btnRun').onclick = () => { closePanels(); runShortcut(); };
+    $('#btnAll').onclick = async () => {
+      const btn = $('#btnAll'); btn.disabled = true; btn.textContent = 'Leyendo el buzón…';
+      const n = await readBox(true);
+      boxMsg = boxError ? null : { ok: true, text: n === 1 ? 'Se leyó 1 reporte.' : `Se leyeron ${n} reportes.` };
+      renderBox();
+    };
+    const disc = $('#btnDisc');
+    disc.onclick = () => {
+      if (disc.dataset.confirm) {
+        st.conn = null; boxError = null; save();
+        boxMsg = { ok: true, text: 'Buzón desconectado. Los datos de este teléfono se mantienen.' };
+        renderAll(); renderBox();
+      } else { disc.dataset.confirm = '1'; disc.textContent = 'Toca otra vez para desconectar'; }
+    };
+  }
   $('#btnPaste').onclick = () => { boxMode = 'paste'; boxMsg = null; renderBox(); };
   const wipe = $('#btnWipe');
   if (wipe) wipe.onclick = () => {
     if (wipe.dataset.confirm) {
-      st = { days: {}, lastReport: null, lastBad: null };
-      save(); boxMsg = { ok: true, text: 'Se borraron los datos de este teléfono. La próxima vez que abras la app desde el atajo vuelven los del último año.' };
+      st.days = {}; st.lastReport = null; st.lastBad = null; save();
+      boxMsg = { ok: true, text: st.conn ? 'Se borraron los datos de este teléfono. Toca Recuperar todo el historial para traerlos de nuevo del buzón.' : 'Se borraron los datos de este teléfono.' };
       renderAll(); renderBox();
-    } else {
-      wipe.dataset.confirm = '1';
-      wipe.textContent = 'Toca otra vez para borrar';
-    }
+    } else { wipe.dataset.confirm = '1'; wipe.textContent = 'Toca otra vez para borrar'; }
   };
 }
 async function copy(text, btn) {
@@ -882,6 +1068,7 @@ load();
 importFromHash();
 renderAll();
 afterImport();
+if (st.conn) readBox(false);
 setInterval(() => { if (document.visibilityState === 'visible' && followToday && ymd(cur) !== ymd(today())) { cur = today(); renderAll(); } }, 60000);
 window.__pasos = { parseReport, parseDate, parseNum, summarize, st: () => st };
 })();
