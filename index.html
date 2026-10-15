@@ -318,7 +318,7 @@ const KEY = 'pasos.v1';
 const SHORTCUT = 'Pasos';
 const APP_URL = 'https://pablocarvallo.github.io/pasos/';
 const DEFAULT_REPO = 'pablocarvallo/pasos-datos';
-const VERSION = '15 oct · 3';
+const VERSION = '15 oct · 4';
 
 const $ = s => document.querySelector(s);
 const DOW = ['domingo','lunes','martes','miércoles','jueves','viernes','sábado'];
@@ -432,14 +432,22 @@ function readValue(kind, vs, us) {
 }
 const HEAD_S = /^(p|pasos|steps)$/i, HEAD_D = /^(d|dist|distancia)$/i;
 // Resultado de la última lectura: bloques descartados y motivo si no se aceptó nada.
-let parseIssue = null, blockIssues = {};
+let parseIssue = null, blockIssues = {}, blockStats = {};
 const KIND_NAME = { s: 'pasos', d: 'distancia' };
 function reportMsg() {
   const parts = [];
   for (const k of ['s', 'd']) {
     const why = blockIssues[k], name = KIND_NAME[k];
     if (why === 'ungrouped') parts.push(`La búsqueda de ${name} trae varias muestras por día: en esa búsqueda elige «Agrupar por: Día».`);
-    else if (why === 'mismatch') parts.push(`En el bloque de ${name} no calzan las fechas con los valores: revisa que el Texto lleve la Fecha de inicio y el Valor de la búsqueda de ${name}.`);
+    else if (why === 'mismatch') {
+      const b = blockStats[k] || { dates: 0, vals: 0, other: 0 };
+      let hint;
+      if (!b.vals && b.other) hint = `El valor llega como texto sin números: en el Texto, toca la variable de valor del bloque de ${name} y elige «Valor».`;
+      else if (!b.vals) hint = `El valor llega vacío: en el Texto, borra la variable de valor del bloque de ${name} y vuelve a elegirla desde la búsqueda de ${name}.`;
+      else if (!b.dates) hint = `La fecha llega vacía o en un formato que no reconozco: en el Texto, vuelve a elegir la Fecha de inicio de la búsqueda de ${name} con formato ISO 8601.`;
+      else hint = `Las dos variables del bloque vienen de búsquedas distintas: en el Texto, borra la fecha y el valor del bloque de ${name} y vuelve a elegirlos desde la búsqueda de ${name}.`;
+      parts.push(`En el bloque de ${name} llegaron ${b.dates} fechas y ${b.vals} valores. ${hint}`);
+    }
     else if (why === 'novalue') parts.push(`En el bloque de ${name} no encontré números: revisa que el Texto lleve el Valor de la búsqueda de ${name}.`);
   }
   if (parts.length) return parts.join(' ');
@@ -447,16 +455,17 @@ function reportMsg() {
   return 'El último reporte del atajo no se pudo leer.';
 }
 function parseReport(text) {
-  parseIssue = null; blockIssues = {};
+  parseIssue = null; blockIssues = {}; blockStats = {};
   const out = {};
   const put = (date, kind, val) => { if (date && val != null) (out[date] = out[date] || {})[kind] = val; };
   const lines = String(text || '').replace(/\r/g, '').split('\n').map(l => l.trim()).filter(Boolean);
   // Formato en bloques (el del atajo): una línea P, luego todas las fechas y todos los valores;
   // una línea D, luego fechas, valores y, si vienen, unidades. Se emparejan en orden.
   // Cada bloque se revisa por separado: si uno viene mal, el otro igual se usa.
-  let kind = null, dates = [], vals = [], units = [], direct = new Map(), dup = false;
+  let kind = null, dates = [], vals = [], units = [], direct = new Map(), dup = false, other = 0;
   const flush = () => {
     if (kind) {
+      blockStats[kind] = { dates: dates.length + direct.size, vals: vals.length + direct.size, other };
       let issue = null;
       const entries = [];
       if (direct.size && !vals.length) {
@@ -469,7 +478,7 @@ function parseReport(text) {
       if (!issue && entries.length && !entries.some(e => e[1] != null)) issue = 'novalue';
       if (issue) blockIssues[kind] = issue; else entries.forEach(([d, v]) => put(d, kind, v));
     }
-    dates = []; vals = []; units = []; direct = new Map(); dup = false;
+    dates = []; vals = []; units = []; direct = new Map(); dup = false; other = 0;
   };
   for (const l of lines) {
     // Formato por líneas: P;fecha;pasos  o  D;fecha;distancia;unidad
@@ -498,7 +507,7 @@ function parseReport(text) {
       continue;
     }
     if (/\d/.test(l)) { vals.push(l); continue; }
-    if (unitOf(l)) units.push(l);
+    if (unitOf(l)) units.push(l); else other++;
   }
   flush();
   if (!Object.keys(out).length) parseIssue = Object.keys(blockIssues).length ? 'blocks' : 'empty';
@@ -554,7 +563,7 @@ function importFromHash() {
   const parsed = parseReport(raw);
   const n = Object.keys(parsed).length;
   if (!n) {
-    st.lastBad = { ts: Date.now(), text: raw.slice(0, 3000), msg: reportMsg() };
+    st.lastBad = { ts: Date.now(), text: raw.slice(0, 60000), msg: reportMsg(), focus: Object.keys(blockIssues)[0] };
     save();
     justImported = { bad: true };
     return true;
@@ -616,13 +625,13 @@ function readBox(all) {
             found++;
             if (!st.lastReport || ts > st.lastReport) {
               st.lastReport = ts;
-              st.lastWarn = warn ? { ts, n: it.number, msg: warn, text: String(it.body || '').slice(0, 3000) } : null;
+              st.lastWarn = warn ? { ts, n: it.number, msg: warn, focus: Object.keys(blockIssues)[0], text: String(it.body || '').slice(0, 60000) } : null;
             }
             if (st.lastBad && st.lastBad.ts < ts) st.lastBad = null;
             if (!all) { stop = true; break; }
           } else if (!st.lastBad || ts >= st.lastBad.ts) {
             if (!st.lastReport || ts > st.lastReport) {
-              st.lastBad = { ts, n: it.number, msg: reportMsg(), text: String(it.body || '').slice(0, 3000) };
+              st.lastBad = { ts, n: it.number, msg: reportMsg(), focus: Object.keys(blockIssues)[0], text: String(it.body || '').slice(0, 60000) };
             }
           }
         }
@@ -978,11 +987,13 @@ function renderBox() {
     const c = st.conn;
     const url = `https://api.github.com/repos/${c.repo}/issues`;
     const prob = st.lastBad || st.lastWarn;
+    let shown = prob ? String(prob.text || '') : '';
+    if (prob && prob.focus === 'd') { const i = shown.search(/(^|\n)\s*D\s*\n/); if (i > 0) shown = shown.slice(i).replace(/^\s*\n/, ''); }
     const bad = prob ? `
       <div class="sect"><h3>${st.lastBad ? 'Último reporte sin leer' : 'Último reporte, leído en parte'}</h3>
       <div class="msg err" style="margin-bottom:10px">${esc(prob.msg || 'El último reporte del atajo no se pudo leer.')}</div>
-      <div class="group"><pre class="raw">${esc(prob.text || '(vacío)')}</pre>
-      <div class="copyrow"><div><span class="ck">Texto recibido${prob.n ? ' · #' + prob.n : ''} · ${relTime(prob.ts)}</span></div><button data-copy="bad">Copiar</button></div></div></div>` : '';
+      <div class="group"><pre class="raw">${esc(shown || '(vacío)')}</pre>
+      <div class="copyrow"><div><span class="ck">Texto recibido${prob.focus === 'd' ? ', desde el bloque D' : ''}${prob.n ? ' · #' + prob.n : ''} · ${relTime(prob.ts)}</span></div><button data-copy="bad">Copiar todo</button></div></div></div>` : '';
     b.innerHTML = `
       ${msg}
       ${boxError ? `<div class="msg err">${esc(boxError.message)}</div>` : ''}
@@ -1096,7 +1107,7 @@ renderAll();
 afterImport();
 if (st.conn) readBox(false);
 setInterval(() => { if (document.visibilityState === 'visible' && followToday && ymd(cur) !== ymd(today())) { cur = today(); renderAll(); } }, 60000);
-window.__pasos = { parseReport, parseDate, parseNum, summarize, st: () => st };
+window.__pasos = { parseReport, parseDate, parseNum, summarize, reportMsg, st: () => st };
 })();
 </script>
 </body>
