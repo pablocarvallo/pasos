@@ -318,6 +318,7 @@ const KEY = 'pasos.v1';
 const SHORTCUT = 'Pasos';
 const APP_URL = 'https://pablocarvallo.github.io/pasos/';
 const DEFAULT_REPO = 'pablocarvallo/pasos-datos';
+const VERSION = '15 oct · 3';
 
 const $ = s => document.querySelector(s);
 const DOW = ['domingo','lunes','martes','miércoles','jueves','viernes','sábado'];
@@ -484,7 +485,11 @@ function parseReport(text) {
     if (!kind) continue;
     const dt = dateAt(l);
     if (dt) {
-      const rest = dt.s.slice(dt.end);
+      // Lo que sigue a la fecha, sin la hora ni la zona horaria («0:00», «a las 0:00:00 GMT-3», «-0300»).
+      const rest = dt.s.slice(dt.end)
+        .replace(/(?:\b(?:a\s+las|at)\s+)?\d{1,2}:\d{2}(?::\d{2})?(?:\s*[ap]\.?\s*m\.?)?/gi, ' ')
+        .replace(/\b(?:gmt|utc)\s*[+-]?\d{0,2}(?::?\d{2})?/gi, ' ')
+        .replace(/(^|\s)[+-]\d{2}:?\d{2}\b/g, ' ');
       // Si la línea trae fecha y valor juntos, se toman como un par.
       if (/\d/.test(rest)) {
         if (direct.has(dt.date)) dup = true;
@@ -615,7 +620,7 @@ function readBox(all) {
             }
             if (st.lastBad && st.lastBad.ts < ts) st.lastBad = null;
             if (!all) { stop = true; break; }
-          } else if (!st.lastBad || ts > st.lastBad.ts) {
+          } else if (!st.lastBad || ts >= st.lastBad.ts) {
             if (!st.lastReport || ts > st.lastReport) {
               st.lastBad = { ts, n: it.number, msg: reportMsg(), text: String(it.body || '').slice(0, 3000) };
             }
@@ -957,7 +962,7 @@ function renderBox() {
         <button class="btn plain" id="btnPaste">Pegar un reporte</button>
         ${wipeBtn}
       </div>
-      <div class="sect"><p>El token queda guardado solo en este teléfono.</p></div>`;
+      <div class="sect"><p>El token queda guardado solo en este teléfono.</p><p style="margin-top:8px">Versión de la app: ${VERSION}</p></div>`;
     $('#btnConnect').onclick = async () => {
       const btn = $('#btnConnect');
       btn.disabled = true; btn.textContent = 'Probando…';
@@ -1005,7 +1010,7 @@ function renderBox() {
         <button class="btn plain" id="btnDisc">Desconectar el buzón</button>
         ${wipeBtn}
       </div>
-      <div class="sect"><p>El token queda guardado solo en este teléfono. Tus datos de Salud quedan en tu repositorio privado y en este teléfono.</p></div>`;
+      <div class="sect"><p>El token queda guardado solo en este teléfono. Tus datos de Salud quedan en tu repositorio privado y en este teléfono.</p><p style="margin-top:8px">Versión de la app: ${VERSION}</p></div>`;
     const vals = { url, auth: 'Bearer ' + c.token, title: SHORTCUT, bad: prob ? prob.text : '' };
     b.querySelectorAll('[data-copy]').forEach(btn => btn.onclick = () => copy(vals[btn.dataset.copy], btn));
     $('#btnRun').onclick = () => { closePanels(); runShortcut(); };
