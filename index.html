@@ -349,26 +349,29 @@ function relTime(ts) {
    Acepta ; | o tabulador, fechas ISO 8601, dd-mm-aaaa o con el mes en palabras,
    y números con punto o coma. */
 const MONTHS = {ene:0,jan:0,feb:1,mar:2,abr:3,apr:3,may:4,jun:5,jul:6,ago:7,aug:7,sep:8,set:8,oct:9,nov:10,dic:11,dec:11};
-function parseDate(str) {
+// Lee una fecha al comienzo del texto. Devuelve la fecha y dónde termina, o null.
+function dateAt(str) {
   const s = String(str).trim().toLowerCase();
+  const r = (date, m) => date ? { date, end: m.index + m[0].length, s } : null;
   let m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})(?:[t ](\d{1,2}):(\d{2})(?::(\d{2})(?:\.\d+)?)?\s*(z|[+-]\d{2}:?\d{2})?)?/);
   if (m) {
     // Con hora en UTC (Z) se pasa a la fecha local; con desfase explícito la fecha escrita ya es la local.
     if (m[7] === 'z') {
       const iso = `${m[1]}-${pad(m[2])}-${pad(m[3])}T${pad(m[4])}:${m[5]}:${m[6] || '00'}${m[7] === 'z' ? 'Z' : m[7].replace(/^([+-]\d{2})(\d{2})$/, '$1:$2')}`;
       const d = new Date(iso);
-      if (!isNaN(d)) return ymd(d);
+      if (!isNaN(d)) return r(ymd(d), m);
     }
-    return valid(+m[1], +m[2], +m[3]);
+    return r(valid(+m[1], +m[2], +m[3]), m);
   }
   m = s.match(/^(\d{1,2})[-\/.](\d{1,2})[-\/.](\d{2,4})\b/);
-  if (m) { let y = +m[3]; if (y < 100) y += 2000; return valid(y, +m[2], +m[1]); }
-  m = s.match(/(\d{1,2})\s*(?:de\s+)?([a-záéíóú]{3,})\.?,?\s*(?:de\s+)?(\d{4})/);
-  if (m && m[2].slice(0, 3) in MONTHS) return valid(+m[3], MONTHS[m[2].slice(0, 3)] + 1, +m[1]);
-  m = s.match(/([a-z]{3,})\.?\s+(\d{1,2}),?\s+(\d{4})/);
-  if (m && m[1].slice(0, 3) in MONTHS) return valid(+m[3], MONTHS[m[1].slice(0, 3)] + 1, +m[2]);
+  if (m) { let y = +m[3]; if (y < 100) y += 2000; return r(valid(y, +m[2], +m[1]), m); }
+  m = s.match(/^(?:[a-záéíóú]+,?\s+)?(\d{1,2})\s*(?:de\s+)?([a-záéíóú]{3,})\.?,?\s*(?:de\s+)?(\d{4})/);
+  if (m && m[2].slice(0, 3) in MONTHS) return r(valid(+m[3], MONTHS[m[2].slice(0, 3)] + 1, +m[1]), m);
+  m = s.match(/^([a-z]{3,})\.?\s+(\d{1,2}),?\s+(\d{4})/);
+  if (m && m[1].slice(0, 3) in MONTHS) return r(valid(+m[3], MONTHS[m[1].slice(0, 3)] + 1, +m[2]), m);
   return null;
 }
+function parseDate(str) { const d = dateAt(str); return d ? d.date : null; }
 function valid(y, mo, d) {
   if (y < 2000 || y > 2100 || mo < 1 || mo > 12 || d < 1 || d > 31) return null;
   const dt = new Date(y, mo - 1, d);
@@ -400,13 +403,18 @@ function parseNum(str, thousandsFirst) {
   if (looksTh && thousandsFirst) return parseFloat(parts.join(''));
   return parseFloat(parts[0] + '.' + parts[1]);
 }
+// Toma el primer número del texto («3.500 pasos», «5,2 km») y la palabra que lo sigue como unidad.
 function readValue(kind, vs, us) {
+  const tok = String(vs).match(/-?\d[\d.,]*/);
+  if (!tok) return null;
+  const num = tok[0].replace(/[.,]$/, '');
+  const after = String(vs).slice(tok.index + tok[0].length).trim().split(/[\s,;]+/)[0] || '';
   if (kind === 's') {
-    const v = parseNum(vs, true);
+    const v = parseNum(num, true);
     return v == null || !isFinite(v) || v < 0 ? null : Math.round(v);
   }
-  let unit = unitOf(us) || unitOf(String(vs).replace(/[\d.,\s-]/g, ''));
-  let v = parseNum(vs, unit === 'm' || unit === 'ft');
+  let unit = unitOf(us) || unitOf(after);
+  let v = parseNum(num, unit === 'm' || unit === 'ft');
   if (v == null || !isFinite(v) || v < 0) return null;
   if (!unit) unit = v > 300 ? 'm' : 'km';
   v = unit === 'm' ? v / 1000 : unit === 'mi' ? v * 1.609344 : unit === 'ft' ? v * 0.0003048 : v;
@@ -439,8 +447,14 @@ function parseReport(text) {
     if (HEAD_S.test(l)) { flush(); kind = 's'; continue; }
     if (HEAD_D.test(l)) { flush(); kind = 'd'; continue; }
     if (!kind) continue;
-    const dt = parseDate(l);
-    if (dt) { dates.push(dt); continue; }
+    const dt = dateAt(l);
+    if (dt) {
+      const rest = dt.s.slice(dt.end);
+      // Si la línea trae fecha y valor juntos, se registra de inmediato.
+      if (/\d/.test(rest)) put(dt.date, kind, readValue(kind, rest));
+      else dates.push(dt.date);
+      continue;
+    }
     if (/\d/.test(l)) { vals.push(l); continue; }
     if (unitOf(l)) units.push(l);
   }

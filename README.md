@@ -42,11 +42,11 @@ Se hace una sola vez. Los nombres pueden variar un poco según la versión de iO
    (búsqueda 2) → Valor
    ```
 
-   Para cada variable: deja el cursor en su renglón, toca **Seleccionar variable** sobre el teclado y toca la acción de búsqueda que corresponde (la primera para P, la segunda para D). Luego toca la variable que quedó en el texto y elige la propiedad **Fecha de inicio** o **Valor**. En las dos de fecha, en **Formato de fecha** elige **ISO 8601**.
+   Para cada variable: deja el cursor en su renglón, toca **Seleccionar variable** sobre el teclado y toca la acción de búsqueda que corresponde (la primera para P, la segunda para D). Luego toca la variable que quedó en el texto y elige la propiedad **Fecha de inicio** o **Valor**. En las dos de fecha, en **Formato de fecha** elige **ISO 8601**. Si después de elegir **Valor** la variable sigue diciendo «Muestras de Salud», déjala así: la app toma el número igual.
 
 5. Agrega **Codificar URL** (busca «codificar»). Toma el Texto anterior.
-6. Agrega la acción **URL** y escribe `https://pablocarvallo.github.io/pasos/#r=` y, pegado al final y sin espacio, la variable que entrega **Codificar URL**.
-7. Agrega **Abrir URL**. Toma la URL anterior.
+6. Agrega otra acción **Texto** y escribe `https://pablocarvallo.github.io/pasos/#r=` y, pegada al final y sin espacio, la variable que entrega **Codificar URL** (Texto codificado de URL). Usa **Texto** y no la acción **URL**: esta última separa la dirección y la variable en dos direcciones distintas.
+7. Agrega **Abrir URL**. Toma el texto anterior.
 8. Toca **Listo**.
 
 La dirección del paso 6 también aparece en la app, en el botón de arriba a la izquierda (**Atajo y datos**), con un botón para copiarla.
