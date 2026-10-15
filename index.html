@@ -430,28 +430,45 @@ function readValue(kind, vs, us) {
   return Math.round(v * 1000) / 1000;
 }
 const HEAD_S = /^(p|pasos|steps)$/i, HEAD_D = /^(d|dist|distancia)$/i;
-// Motivo por el que el último reporte no se aceptó (null si se leyó bien).
-let parseIssue = null;
-const ISSUE_MSG = {
-  ungrouped: 'El atajo envía varias muestras por día. En las dos búsquedas de Salud, elige «Agrupar por: Día».',
-  mismatch: 'El atajo envió distinta cantidad de fechas que de valores. Revisa el Texto del atajo: cada bloque lleva la Fecha de inicio y el Valor de la misma búsqueda.',
-  empty: 'El último reporte del atajo no trae fechas con pasos o distancia.'
-};
+// Resultado de la última lectura: bloques descartados y motivo si no se aceptó nada.
+let parseIssue = null, blockIssues = {};
+const KIND_NAME = { s: 'pasos', d: 'distancia' };
+function reportMsg() {
+  const parts = [];
+  for (const k of ['s', 'd']) {
+    const why = blockIssues[k], name = KIND_NAME[k];
+    if (why === 'ungrouped') parts.push(`La búsqueda de ${name} trae varias muestras por día: en esa búsqueda elige «Agrupar por: Día».`);
+    else if (why === 'mismatch') parts.push(`En el bloque de ${name} no calzan las fechas con los valores: revisa que el Texto lleve la Fecha de inicio y el Valor de la búsqueda de ${name}.`);
+    else if (why === 'novalue') parts.push(`En el bloque de ${name} no encontré números: revisa que el Texto lleve el Valor de la búsqueda de ${name}.`);
+  }
+  if (parts.length) return parts.join(' ');
+  if (parseIssue === 'empty') return 'El reporte no trae las líneas P y D con fechas y valores. Revisa que el campo body del atajo sea la variable Texto.';
+  return 'El último reporte del atajo no se pudo leer.';
+}
 function parseReport(text) {
-  parseIssue = null;
+  parseIssue = null; blockIssues = {};
   const out = {};
   const put = (date, kind, val) => { if (date && val != null) (out[date] = out[date] || {})[kind] = val; };
   const lines = String(text || '').replace(/\r/g, '').split('\n').map(l => l.trim()).filter(Boolean);
   // Formato en bloques (el del atajo): una línea P, luego todas las fechas y todos los valores;
   // una línea D, luego fechas, valores y, si vienen, unidades. Se emparejan en orden.
-  let kind = null, dates = [], vals = [], units = [], direct = new Set();
+  // Cada bloque se revisa por separado: si uno viene mal, el otro igual se usa.
+  let kind = null, dates = [], vals = [], units = [], direct = new Map(), dup = false;
   const flush = () => {
-    if (kind && (dates.length || vals.length)) {
-      if (new Set(dates).size < dates.length) parseIssue = parseIssue || 'ungrouped';
-      else if (dates.length !== vals.length) parseIssue = parseIssue || 'mismatch';
-      else for (let i = 0; i < dates.length; i++) put(dates[i], kind, readValue(kind, vals[i], units[i] || units[0]));
+    if (kind) {
+      let issue = null;
+      const entries = [];
+      if (direct.size && !vals.length) {
+        if (dup) issue = 'ungrouped'; else direct.forEach((v, d) => entries.push([d, v]));
+      } else if (dates.length || vals.length) {
+        if (new Set(dates).size < dates.length) issue = 'ungrouped';
+        else if (dates.length !== vals.length) issue = 'mismatch';
+        else for (let i = 0; i < dates.length; i++) entries.push([dates[i], readValue(kind, vals[i], units[i] || units[0])]);
+      }
+      if (!issue && entries.length && !entries.some(e => e[1] != null)) issue = 'novalue';
+      if (issue) blockIssues[kind] = issue; else entries.forEach(([d, v]) => put(d, kind, v));
     }
-    dates = []; vals = []; units = []; direct = new Set();
+    dates = []; vals = []; units = []; direct = new Map(); dup = false;
   };
   for (const l of lines) {
     // Formato por líneas: P;fecha;pasos  o  D;fecha;distancia;unidad
@@ -468,11 +485,10 @@ function parseReport(text) {
     const dt = dateAt(l);
     if (dt) {
       const rest = dt.s.slice(dt.end);
-      // Si la línea trae fecha y valor juntos, se registra de inmediato.
+      // Si la línea trae fecha y valor juntos, se toman como un par.
       if (/\d/.test(rest)) {
-        if (direct.has(dt.date)) parseIssue = parseIssue || 'ungrouped';
-        direct.add(dt.date);
-        put(dt.date, kind, readValue(kind, rest));
+        if (direct.has(dt.date)) dup = true;
+        direct.set(dt.date, readValue(kind, rest));
       } else dates.push(dt.date);
       continue;
     }
@@ -480,8 +496,7 @@ function parseReport(text) {
     if (unitOf(l)) units.push(l);
   }
   flush();
-  if (parseIssue) return {};
-  if (!Object.keys(out).length) parseIssue = 'empty';
+  if (!Object.keys(out).length) parseIssue = Object.keys(blockIssues).length ? 'blocks' : 'empty';
   return out;
 }
 function mergeReport(parsed, ts) {
@@ -534,7 +549,7 @@ function importFromHash() {
   const parsed = parseReport(raw);
   const n = Object.keys(parsed).length;
   if (!n) {
-    st.lastBad = { ts: Date.now(), text: raw.slice(0, 3000), why: parseIssue };
+    st.lastBad = { ts: Date.now(), text: raw.slice(0, 3000), msg: reportMsg() };
     save();
     justImported = { bad: true };
     return true;
@@ -591,14 +606,18 @@ function readBox(all) {
           if (!all && st.lastReport && ts <= st.lastReport) { stop = true; break; }
           const parsed = parseReport(it.body);
           if (Object.keys(parsed).length) {
+            const warn = Object.keys(blockIssues).length ? reportMsg() : null;
             mergeReport(parsed, ts);
             found++;
-            if (!st.lastReport || ts > st.lastReport) st.lastReport = ts;
+            if (!st.lastReport || ts > st.lastReport) {
+              st.lastReport = ts;
+              st.lastWarn = warn ? { ts, n: it.number, msg: warn, text: String(it.body || '').slice(0, 3000) } : null;
+            }
             if (st.lastBad && st.lastBad.ts < ts) st.lastBad = null;
             if (!all) { stop = true; break; }
           } else if (!st.lastBad || ts > st.lastBad.ts) {
             if (!st.lastReport || ts > st.lastReport) {
-              st.lastBad = { ts, n: it.number, why: parseIssue, text: ((it.title ? it.title + '\n' : '') + (it.body || '')).slice(0, 3000) };
+              st.lastBad = { ts, n: it.number, msg: reportMsg(), text: String(it.body || '').slice(0, 3000) };
             }
           }
         }
@@ -637,7 +656,7 @@ async function connect(repoIn, tokenIn) {
     throw new Error(e.message);
   }
   st.conn = { repo, token };
-  st.lastReport = null; st.lastBad = null;
+  st.lastReport = null; st.lastBad = null; st.lastWarn = null;
   boxError = null;
   save();
   await readBox(false);
@@ -665,7 +684,7 @@ async function waitForReport() {
     await readBox(false);
     if ((st.lastReport || 0) > p.prev) {
       pending = null; cur = today(); followToday = true;
-      renderAll(); toast('Datos actualizados');
+      renderAll(); toast(st.lastWarn && st.lastWarn.ts > p.prev ? 'Datos actualizados en parte' : 'Datos actualizados');
       return;
     }
     if (boxError) { pending = null; renderAll(); return; }
@@ -712,8 +731,9 @@ function renderBanner() {
   let text = '', btn = '', act = null;
   if (isExample()) { text = 'Estás viendo datos de ejemplo.'; btn = 'Conectar'; act = openBox; }
   else if (boxError && boxError.kind !== 'net') { text = boxError.message; btn = 'Revisar'; act = openBox; }
+  else if (st.lastBad) { text = st.lastBad.msg || 'El último reporte del atajo no se pudo leer.'; btn = 'Ver'; act = openBox; }
+  else if (st.lastWarn) { text = st.lastWarn.msg; btn = 'Ver'; act = openBox; }
   else if (st.conn && !Object.keys(st.days).length && !busy) { text = 'Buzón conectado. Toca Actualizar para traer tus datos de Salud.'; btn = 'Actualizar'; act = runShortcut; }
-  else if (st.lastBad) { text = ISSUE_MSG[st.lastBad.why] || 'El último reporte del atajo no se pudo leer.'; btn = 'Revisar'; act = openBox; }
   b.hidden = !text;
   $('#bannerText').textContent = text;
   $('#bannerBtn').textContent = btn;
@@ -901,10 +921,10 @@ function renderBox() {
     $('#pasteGo').onclick = () => {
       const parsed = parseReport($('#pasteText').value);
       const n = Object.keys(parsed).length;
-      if (!n) { boxMsg = { text: ISSUE_MSG[parseIssue] || 'No encontré fechas con pasos o distancia en ese texto.' }; renderBox(); return; }
+      if (!n) { boxMsg = { text: reportMsg() }; renderBox(); return; }
       mergeReport(parsed, Date.now());
       save();
-      boxMode = 'main'; boxMsg = { ok: true, text: n === 1 ? 'Se agregó 1 día.' : `Se agregaron ${n} días.` };
+      boxMode = 'main'; boxMsg = { ok: !Object.keys(blockIssues).length, text: (n === 1 ? 'Se agregó 1 día.' : `Se agregaron ${n} días.`) + (Object.keys(blockIssues).length ? ' ' + reportMsg() : '') };
       renderAll(); renderBox();
     };
     $('#pasteBack').onclick = () => { boxMode = 'main'; boxMsg = null; renderBox(); };
@@ -952,14 +972,16 @@ function renderBox() {
   } else {
     const c = st.conn;
     const url = `https://api.github.com/repos/${c.repo}/issues`;
-    const bad = st.lastBad ? `
-      <div class="sect"><h3>Último reporte sin leer</h3>
-      <div class="group"><pre class="raw">${esc(st.lastBad.text || '(vacío)')}</pre>
-      <div class="copyrow"><div><span class="ck">${st.lastBad.n ? '#' + st.lastBad.n + ' · ' : ''}${relTime(st.lastBad.ts)}</span></div><button data-copy="bad">Copiar</button></div></div>
-      <p style="margin:8px 4px 0;font-size:13px">${esc(ISSUE_MSG[st.lastBad.why] || 'Revisa que el Texto del atajo tenga las líneas P y D, con las fechas y los valores uno por renglón.')}</p></div>` : '';
+    const prob = st.lastBad || st.lastWarn;
+    const bad = prob ? `
+      <div class="sect"><h3>${st.lastBad ? 'Último reporte sin leer' : 'Último reporte, leído en parte'}</h3>
+      <div class="msg err" style="margin-bottom:10px">${esc(prob.msg || 'El último reporte del atajo no se pudo leer.')}</div>
+      <div class="group"><pre class="raw">${esc(prob.text || '(vacío)')}</pre>
+      <div class="copyrow"><div><span class="ck">Texto recibido${prob.n ? ' · #' + prob.n : ''} · ${relTime(prob.ts)}</span></div><button data-copy="bad">Copiar</button></div></div></div>` : '';
     b.innerHTML = `
       ${msg}
       ${boxError ? `<div class="msg err">${esc(boxError.message)}</div>` : ''}
+      ${bad}
       <div class="group">
         <div class="grow"><span>Repositorio</span><span class="gv">${esc(c.repo)}</span></div>
         <div class="grow"><span>Último reporte</span><span class="gv">${st.lastReport ? cap(relTime(st.lastReport)) : 'Ninguno todavía'}</span></div>
@@ -976,7 +998,6 @@ function renderBox() {
       <p style="margin:8px 4px 0;font-size:13px">El campo body del cuerpo JSON es la variable Texto.</p></div>
 
       ${textoAtajo}
-      ${bad}
 
       <div class="stack">
         <button class="btn plain" id="btnAll">Recuperar todo el historial del buzón</button>
@@ -985,7 +1006,7 @@ function renderBox() {
         ${wipeBtn}
       </div>
       <div class="sect"><p>El token queda guardado solo en este teléfono. Tus datos de Salud quedan en tu repositorio privado y en este teléfono.</p></div>`;
-    const vals = { url, auth: 'Bearer ' + c.token, title: SHORTCUT, bad: st.lastBad ? st.lastBad.text : '' };
+    const vals = { url, auth: 'Bearer ' + c.token, title: SHORTCUT, bad: prob ? prob.text : '' };
     b.querySelectorAll('[data-copy]').forEach(btn => btn.onclick = () => copy(vals[btn.dataset.copy], btn));
     $('#btnRun').onclick = () => { closePanels(); runShortcut(); };
     $('#btnAll').onclick = async () => {
@@ -1007,7 +1028,7 @@ function renderBox() {
   const wipe = $('#btnWipe');
   if (wipe) wipe.onclick = () => {
     if (wipe.dataset.confirm) {
-      st.days = {}; st.lastReport = null; st.lastBad = null; save();
+      st.days = {}; st.lastReport = null; st.lastBad = null; st.lastWarn = null; save();
       boxMsg = { ok: true, text: st.conn ? 'Se borraron los datos de este teléfono. Toca Recuperar todo el historial para traerlos de nuevo del buzón.' : 'Se borraron los datos de este teléfono.' };
       renderAll(); renderBox();
     } else { wipe.dataset.confirm = '1'; wipe.textContent = 'Toca otra vez para borrar'; }
